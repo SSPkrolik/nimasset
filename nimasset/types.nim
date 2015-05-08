@@ -5,8 +5,8 @@ type
 
 proc newMeshData*[V, F](verticesCount: Natural, facesCount: Natural): MeshData[V, F] =
     result.new
-    result.vertices = newSeq[V](verticesCount /% 3)
-    result.faces = newSeq[F](facesCount /% 3 - 1)
+    result.vertices = newSeq[V](verticesCount)
+    result.faces = newSeq[F](facesCount)
 
 proc `$`*[V, F](mesh: ref MeshData[V, F]): string =
     return "string rep of meshdata"
