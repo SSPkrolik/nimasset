@@ -1,4 +1,7 @@
 type
+    AssetFormat* = enum
+        ObjFormat = "obj",
+
     MeshData*[V, F] = ref object of RootObj ## 3D Mesh-related data from *.obj files
         vertices: seq[array[0..2, V]]       ##   - vertices array
         faces: seq[array[0..2, F]]          ##   - faces array (vertices index array)
@@ -7,13 +10,19 @@ proc newMeshData*[V, F](verticesCount: Natural, facesCount: Natural): MeshData[V
     ## MeshData reference type constructor. Takes number of vertices and
     ## number of faces for initializing internal storage.
     result.new
-    result.vertices = newSeq[V](verticesCount)
-    result.faces = newSeq[F](facesCount)
+    result.vertices = newSeq[array[0..2, V]](verticesCount)
+    result.faces = newSeq[array[0..2, F]](facesCount)
 
-proc `$`*[V, F](mesh: ref MeshData[V, F]): string =
+proc `$`*[V, F](mesh: MeshData[V, F]): string =
     ## MeshData toString operator
-    return "string rep of meshdata"
+    return "3D Mesh " & " (" & $(mesh.vertexCount) & " vertices, " & $(mesh.faceCount) & " faces)"
+
+proc vertexCount*(mesh: MeshData): Natural =
+    return len(mesh.vertices)
+
+proc faceCount*(mesh: MeshData): Natural =
+    return len(mesh.faces)
 
 when (isMainModule):
-    let mesh = MeshData[float32, int32].new
+    let mesh = newMeshData[float32, int32](0, 0)
     echo mesh
