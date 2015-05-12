@@ -1,10 +1,13 @@
 type
-    AssetFormat* = enum
-        ObjFormat = "obj",
-
     MeshData*[V, F] = ref object of RootObj ## 3D Mesh-related data from *.obj files
-        vertices: seq[array[0..2, V]]       ##   - vertices array
-        faces: seq[array[0..2, F]]          ##   - faces array (vertices index array)
+        vertices*: seq[array[0..2, V]]       ##   - vertices array
+        faces*: seq[array[0..2, F]]          ##   - faces array (vertices index array)
+
+
+proc newMeshData*[V, F](vertices: ref seq[array[0..2, V]], faces: ref seq[array[0..2, F]]): MeshData[V, F] =
+    result.new
+    result.verices = vertices
+    result.faces = faces
 
 proc newMeshData*[V, F](verticesCount: Natural, facesCount: Natural): MeshData[V, F] =
     ## MeshData reference type constructor. Takes number of vertices and
