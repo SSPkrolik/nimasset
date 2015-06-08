@@ -11,7 +11,7 @@ proc loadMeshData*[V, F](loader: ObjLoader, s: Stream): MeshData[V, F] =
     ## Loads mesh data from stream defined in streams module of
     ## standard library.
     var
-        line: string
+        line: string = ""
         vertices: seq[array[0..2, V]] = @[]
         faces: seq[array[0..2, F]] = @[]
 
@@ -19,10 +19,18 @@ proc loadMeshData*[V, F](loader: ObjLoader, s: Stream): MeshData[V, F] =
         line = line.strip()
         if line.startsWith("#"):
             continue
+
         let components = line.split()
+        if components.len() == 0:
+            continue
+
         case components[0]:
         of "v":
-            discard # TODO: parse vertex coords
+            vertices.add([
+                cast[V](parseFloat(components[1])),
+                cast[V](parseFloat(components[2])),
+                cast[V](parseFloat(components[3]))
+            ])
         of "f":
             discard # TODO: parse faces
         else:
@@ -52,5 +60,7 @@ proc loadMeshData*[V, F](loader: ObjLoader, data: string): MeshData[V, F] =
 
 when (isMainModule):
     let loader: ObjLoader = new(ObjLoaderObj)
-    let mesh = loadMeshData[float32, int32](loader, "some data")
+    let f = open("teapot.obj")
+    let mesh = loadMeshData[float32, int32](loader, f)
     echo mesh
+    f.close()

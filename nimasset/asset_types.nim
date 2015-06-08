@@ -4,9 +4,9 @@ type
         faces*: seq[array[0..2, F]]          ##   - faces array (vertices index array)
 
 
-proc newMeshData*[V, F](vertices: ref seq[array[0..2, V]], faces: ref seq[array[0..2, F]]): MeshData[V, F] =
+proc newMeshData*[V, F](vertices: seq[array[0..2, V]], faces: seq[array[0..2, F]]): MeshData[V, F] =
     result.new
-    result.verices = vertices
+    result.vertices = vertices
     result.faces = faces
 
 proc newMeshData*[V, F](verticesCount: Natural, facesCount: Natural): MeshData[V, F] =
