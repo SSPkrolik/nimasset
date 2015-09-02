@@ -58,10 +58,11 @@ template loadMeshData*(loader: ObjLoader, data: pointer, addVertex: expr, addTex
     let s = newStringStream(`$`(cast[cstring](data)))
     return loadMeshData(loader, s, addVertex, addTexture, addFace)
 
-proc loadMeshData*(loader: ObjLoader, f: File, addVertex: expr, addTexture: expr, addFace: expr): expr =
-    ## Loads mesh data from file
-    let s = newFileStream(f)
-    return loadMeshData(loader, s, addVertex, addTexture, addFace)
+when not defined(js):
+    proc loadMeshData*(loader: ObjLoader, f: File, addVertex: expr, addTexture: expr, addFace: expr): expr =
+        ## Loads mesh data from file
+        let s = newFileStream(f)
+        return loadMeshData(loader, s, addVertex, addTexture, addFace)
 
 proc loadMeshData*(loader: ObjLoader, data: string, addVertex: expr, addTexture: expr, addFace: expr): expr =
     ## Loads mesh data from string
@@ -69,7 +70,7 @@ proc loadMeshData*(loader: ObjLoader, data: string, addVertex: expr, addTexture:
     return loadMeshData(loader, s, addVertex, addTexture, addFace)
 
 
-when (isMainModule):
+when isMainModule and not defined(js):
     ## Testing OBjLoader:
     ## - Load Mesh Data on sample OBJ teapot model without textures
     let loader: ObjLoader = new(ObjLoaderObj)
