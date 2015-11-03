@@ -3,6 +3,8 @@ import parsexml
 import times
 
 type
+  ErrBadCollada = ref object of Exception
+
   ColladaLoader* = ref object ## Loads COLLADA (*.dae) format for 3D assets
 
   UpAxis* = enum
@@ -31,23 +33,39 @@ type
     unit*: UnitInfo           ## Real-world distance units
     up_axis*: UpAxis          ## Which axis is considered as up
 
-  Geometry = ref object
-    vertices: array[0..2, float]
+  Geometry* = ref object
+    vertices*: array[0..2, float]
 
   ColladaScene* = ref object
     ## Collada Scene represented by a file to load from
     asset: Asset
     geometry: seq[Geometry]
 
-template load*(loader: ColladaLoader, s: Stream): expr =
-  ## The very low-level way to load COLLADA data into application.
+  ColladaContext = object
+    section: string
+
+const
+  csNone  = ""
+  csAsset = "asset"
+
+proc load*(loader: ColladaLoader, s: Stream): ColladaScene =
+  ## Loads COLLADA data into Nim objects.
   var x: XmlParser
   x.open(s, "")
   x.next()
+  result.new
+  var cc = ColladaContext(section: csNone)
   while true:
     case x.kind
     of xmlElementStart:
-      break
+      case x.elementName
+      of csAsset:
+        if cc.section == csNone:
+          cc.section = csAsset
+        else:
+          raise ErrBadCollada.new
+      else:
+        break
     else:
       break
 
@@ -57,4 +75,4 @@ when isMainModule and not defined(js):
     fs = newFileStream(f)
     loader = ColladaLoader.new
 
-  loader.load(fs)
+  let scene = loader.load(fs)
