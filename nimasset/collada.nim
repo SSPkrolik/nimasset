@@ -31,12 +31,22 @@ type
     unit*: UnitInfo           ## Real-world distance units
     up_axis*: UpAxis          ## Which axis is considered as up
 
-template loadMeshData*(loader: ColladaLoader, s: Stream): expr =
+template loadScene*(loader: ColladaLoader, s: Stream): expr =
   ## The very low-level way to load COLLADA data into application.
   var x: XmlParser
-  x.open(s)
+  x.open(s, "")
   x.next()
   while true:
-    case x.kind:
-    of XmlElementStart:
+    case x.kind
+    of xmlElementStart:
       break
+    else:
+      break
+
+when isMainModule and not defined(js):
+  let
+    f = open("cube.dae")
+    fs = newFileStream(f)
+    loader = ColladaLoader.new
+
+  loader.loadScene(fs)
