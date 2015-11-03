@@ -31,7 +31,15 @@ type
     unit*: UnitInfo           ## Real-world distance units
     up_axis*: UpAxis          ## Which axis is considered as up
 
-template loadScene*(loader: ColladaLoader, s: Stream): expr =
+  Geometry = ref object
+    vertices: array[0..2, float]
+
+  ColladaScene* = ref object
+    ## Collada Scene represented by a file to load from
+    asset: Asset
+    geometry: seq[Geometry]
+
+template load*(loader: ColladaLoader, s: Stream): expr =
   ## The very low-level way to load COLLADA data into application.
   var x: XmlParser
   x.open(s, "")
@@ -49,4 +57,4 @@ when isMainModule and not defined(js):
     fs = newFileStream(f)
     loader = ColladaLoader.new
 
-  loader.loadScene(fs)
+  loader.load(fs)
