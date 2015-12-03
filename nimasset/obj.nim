@@ -11,7 +11,7 @@ type
 # addTexture : expr = call
 # addIndex: expr = call
 # ret void / bool / exception
-template loadMeshData*(loader: ObjLoader, s: Stream, addVertex: expr, addTexture: expr, addFace: expr): expr =
+template loadMeshData*(loader: ObjLoader, s: Stream, addVertex: untyped, addTexture: untyped, addFace: untyped) =
     ## Loads mesh data from stream defined in streams module of
     ## standard library.
     var
@@ -52,22 +52,19 @@ template loadMeshData*(loader: ObjLoader, s: Stream, addVertex: expr, addTexture
                 # TODO: implement vertex normals support
                 continue
 
-template loadMeshData*(loader: ObjLoader, data: pointer, addVertex: expr, addTexture: expr, addFace: expr): expr =
+template loadMeshData*(loader: ObjLoader, data: pointer, addVertex: untyped, addTexture: untyped, addFace: untyped) =
     ## Loads mesh data from given pointer as a source, and a size
     ## of data provided with pointer.
-    let s = newStringStream(`$`(cast[cstring](data)))
-    return loadMeshData(loader, s, addVertex, addTexture, addFace)
+    loadMeshData(loader, newStringStream(`$`(cast[cstring](data))), addVertex, addTexture, addFace)
 
 when not defined(js):
-    proc loadMeshData*(loader: ObjLoader, f: File, addVertex: expr, addTexture: expr, addFace: expr): expr =
+    template loadMeshData*(loader: ObjLoader, f: File, addVertex: untyped, addTexture: untyped, addFace: untyped) =
         ## Loads mesh data from file
-        let s = newFileStream(f)
-        return loadMeshData(loader, s, addVertex, addTexture, addFace)
+        loadMeshData(loader, newFileStream(f), addVertex, addTexture, addFace)
 
-proc loadMeshData*(loader: ObjLoader, data: string, addVertex: expr, addTexture: expr, addFace: expr): expr =
+template loadMeshData*(loader: ObjLoader, data: string, addVertex: untyped, addTexture: untyped, addFace: untyped) =
     ## Loads mesh data from string
-    let s = newStringStream(data)
-    return loadMeshData(loader, s, addVertex, addTexture, addFace)
+    loadMeshData(loader, newStringStream(data), addVertex, addTexture, addFace)
 
 
 when isMainModule and not defined(js):
