@@ -58,9 +58,9 @@ template loadMeshData*(loader: ObjLoader, s: Stream, addVertex: untyped, addText
                     ni2 = parseInt(block_3[2])
                 addFace(vi_0, vi_1, vi_2, ti_0, ti_1, ti_2, ni0, ni1, ni2)
 
-template loadMeshData*(loader: ObjLoader, s: Stream, addVertex: untyped, addTexture: untyped, addNormal: untyped, addFace: untyped) =
+template loadMeshData*(loader: ObjLoader, s: Stream, addVertex: untyped, addTexture: untyped, addFace: untyped) =
     template addNormal(x, y, z: float32) = discard
-    loadMeshData(loader, s, addVertex, addNormal, addTexture, addNormal, addFace)
+    loadMeshData(loader, s, addVertex, addTexture, addNormal, addFace)
 
 template loadMeshData*(loader: ObjLoader, data: pointer, addVertex: untyped, addTexture: untyped, addNormal: untyped, addFace: untyped) =
     ## Loads mesh data from given pointer as a source, and a size
