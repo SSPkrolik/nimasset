@@ -11,7 +11,7 @@ type
 # addTexture : expr = call
 # addIndex: expr = call
 # ret void / bool / exception
-template loadMeshData*(loader: ObjLoader, s: Stream, addVertex: untyped, addTexture: untyped, addFace: untyped) =
+template loadMeshData*(loader: ObjLoader, s: Stream, addVertex: untyped, addTexture: untyped, addNormal: untyped, addFace: untyped) =
     ## Loads mesh data from stream defined in streams module of
     ## standard library.
     var
@@ -30,13 +30,13 @@ template loadMeshData*(loader: ObjLoader, s: Stream, addVertex: untyped, addText
         elif components[0] == "vt": # Vertex Texture data
             addTexture(parseFloat(components[1]), parseFloat(components[2]), parseFloat(components[3]))
         elif components[0] == "vn": # Vertext Normals data
-            # TODO: implment vertex normals support
-            continue
+            addNormal(parseFloat(components[1]), parseFloat(components[2]), parseFloat(components[3]))
         elif components[0] == "f":
-            if line.count("/") == 0:  # Only vertices in face data
+            let comnponentsCount = components[1].count("/") + 1
+            if comnponentsCount == 1:  # Only vertices in face data
                 addFace(parseInt(components[1]), parseInt(components[2]), parseInt(components[3]), 0, 0, 0, 0, 0, 0)
                 continue
-            elif line.count("/") >= 3:  # Vertex and Texture data in face data
+            elif comnponentsCount >= 2:  # Vertex, Normal and Texture data in face data
                 let
                     block_1 = components[1].split("/")
                     block_2 = components[2].split("/")
@@ -47,24 +47,34 @@ template loadMeshData*(loader: ObjLoader, s: Stream, addVertex: untyped, addText
                     ti_0 = parseInt(block_1[1])
                     ti_1 = parseInt(block_2[1])
                     ti_2 = parseInt(block_3[1])
-                addFace(vi_0, vi_1, vi_2, ti_0, ti_1, ti_2, 0, 0, 0)
-            if line.count("/") == 6:  # Vertex, Texture, and Normals data in face data
-                # TODO: implement vertex normals support
-                continue
+                var
+                    ni0 = 0
+                    ni1 = 0
+                    ni2 = 0
 
-template loadMeshData*(loader: ObjLoader, data: pointer, addVertex: untyped, addTexture: untyped, addFace: untyped) =
+                if comnponentsCount >= 3:
+                    ni0 = parseInt(block_1[2])
+                    ni1 = parseInt(block_2[2])
+                    ni2 = parseInt(block_3[2])
+                addFace(vi_0, vi_1, vi_2, ti_0, ti_1, ti_2, ni0, ni1, ni2)
+
+template loadMeshData*(loader: ObjLoader, s: Stream, addVertex: untyped, addTexture: untyped, addFace: untyped) =
+    template addNormal(x, y, z: float32) = discard
+    loadMeshData(loader, s, addVertex, addTexture, addNormal, addFace)
+
+template loadMeshData*(loader: ObjLoader, data: pointer, addVertex: untyped, addTexture: untyped, addNormal: untyped, addFace: untyped) =
     ## Loads mesh data from given pointer as a source, and a size
     ## of data provided with pointer.
-    loadMeshData(loader, newStringStream(`$`(cast[cstring](data))), addVertex, addTexture, addFace)
+    loadMeshData(loader, newStringStream(`$`(cast[cstring](data))), addVertex, addTexture, addNormal, addFace)
 
 when not defined(js):
-    template loadMeshData*(loader: ObjLoader, f: File, addVertex: untyped, addTexture: untyped, addFace: untyped) =
+    template loadMeshData*(loader: ObjLoader, f: File, addVertex: untyped, addTexture: untyped, addNormal: untyped, addFace: untyped) =
         ## Loads mesh data from file
-        loadMeshData(loader, newFileStream(f), addVertex, addTexture, addFace)
+        loadMeshData(loader, newFileStream(f), addVertex, addTexture, addNormal, addFace)
 
-template loadMeshData*(loader: ObjLoader, data: string, addVertex: untyped, addTexture: untyped, addFace: untyped) =
+template loadMeshData*(loader: ObjLoader, data: string, addVertex: untyped, addTexture: untyped, addNormal: untyped, addFace: untyped) =
     ## Loads mesh data from string
-    loadMeshData(loader, newStringStream(data), addVertex, addTexture, addFace)
+    loadMeshData(loader, newStringStream(data), addVertex, addTexture, addNormal, addFace)
 
 
 when isMainModule and not defined(js):
