@@ -56,13 +56,16 @@ type
         material*: string
         childs*: seq[ColladaNode]
 
-    ColladaScene* = ref object
-        path*: string
-        pathShared*: string
-        rootNode*: ColladaNode
-        childNodesGeometry*: seq[ColladaGeometry]
-        childNodesMaterial*: seq[ColladaMaterial]
-        childNodesImages*: seq[ColladaImage]
+    ChannelKind* {.pure.} = enum
+        ## Kind of channel interpretation (at least like Maya names it)
+        Matrix     = "matrix"
+        Visibility = "visibility"
+
+    ColladaChannel* = ref object
+        ## Collada Animation Channel
+        source*: string
+        target*: string
+        kind*:   ChannelKind
 
     SourceKind* {.pure.} = enum
         ## Kind of source data stored in COLLADA file
@@ -87,8 +90,36 @@ type
         of SourceKind.Int:
         dataInt*:       seq[int32]
 
-    ColladaChannel* = ref object
-        ## Collada Animation Channel
+    ColladaInput = ref object
+        ## Collada Input Definition
+        semantics*: string
+        source*:    string
+
+    ColladaSampler* = ref object
+        ## Collada Animation Sampler
+        id*:            string
+        input*:         seq[ColladaInput]
+        output*:        seq[ColladaInput]
+        inTangent*:     seq[ColladaInput]
+        outTangent*:    seq[ColladaInput]
+        interpolation*: seq[ColladaInput]
+
+    ColladaAnimation* = ref object
+        ## Collada Animation Descriptor
+        id*:       string
+        children*: seq[ColladaAnimation]
+        sources* : seq[ColladaSource]
+        sampler* : ColladaSampler
+        channel* : ColladaChannel
+
+    ColladaScene* = ref object
+        path*: string
+        pathShared*: string
+        rootNode*: ColladaNode
+        childNodesGeometry*: seq[ColladaGeometry]
+        childNodesMaterial*: seq[ColladaMaterial]
+        childNodesImages*:   seq[ColladaImage]
+        animations*:         seq[ColladaAnimation]
 
     InterpolationKind* {.pure.} = enum
         Linear   = "LINEAR"
@@ -97,21 +128,6 @@ type
         Hermite  = "HERMITE"
         Bspline  = "BSPLINE"
         Step     = "STEP"
-
-    ColladaInput = ref object
-        ## Collada Input Definition
-        semantics*: string
-        source*: ColladaSource
-
-    ColladaSampler* = ref object
-        ## Collada Animation Sampler
-        inputs*: seq[ColladaInput]
-
-    ColladaAnimation* = ref object
-        children*: seq[ColladaAnimation]
-        sources* : seq[ColladaSource]
-        sampler* : ColladaSampler
-        channel* : ColladaChannel
 
 const
     ## Input semantics kinds. These are made constants, not enums because 'semantics'
@@ -170,7 +186,7 @@ const
     csInstanceMaterial = "instance_material"
     csInstanceVisualScene = "instance_visual_scene"
     csVisibility = "visibility"
-    csLibraryAnimation = "library_animations"
+    csLibraryAnimations = "library_animations"
     csAnimation = "animation"
     csChannel = "channel"
     csSampler = "sampler"
@@ -205,11 +221,23 @@ proc newColladaSource(kind: SourceKind): ColladaSource =
     of SourceKind.Int:
         result.dataInt   = @[]
 
+proc newColladaChannel(): ColladaChannel =
+    ## Create empty animation channel object
+    result.new
+    result.source = ""
+    result.target = ""
+
+proc newColladaSampler(): ColladaSampler =
+    ## Create empty animation sampler object
+    result.new
+    result.id = ""
+
 proc newColladaAnimation(): ColladaAnimation =
     ## Create empty animation object
     result.new
-    result.sampler.new
-    result.channel.new
+    result.id = ""
+    result.sampler = newColladaSampler()
+    result.channel = newColladaChannel()
     result.children = @[]
     result.sources  = @[]
 
@@ -219,10 +247,12 @@ proc newColladaNode(): ColladaNode =
 
 proc newColladaScene(): ColladaScene =
     result.new()
+    result.path = ""
     result.rootNode = newColladaNode()
-    result.childNodesGeometry = newSeq[ColladaGeometry]()
-    result.childNodesMaterial = newSeq[ColladaMaterial]()
-    result.childNodesImages = newSeq[ColladaImage]()
+    result.childNodesGeometry = @[]
+    result.childNodesMaterial = @[]
+    result.childNodesImages   = @[]
+    result.animations         = @[]
 
 proc parseImages(x: var XmlParser, images: var seq[ColladaImage]) = # collect textures location
     while true:
@@ -467,9 +497,6 @@ proc parseGeometry(x: var XmlParser, geom: var seq[ColladaGeometry]) =
     of xmlEof: break
     else: discard
 
-proc parseAnimation(x: var XmlParser, cs: var ColladaScene) =
-    ## Parse <animation> tag
-
 proc parseNode(x: var XmlParser): ColladaNode =
   result = newColladaNode()
 
@@ -508,58 +535,160 @@ proc parseNode(x: var XmlParser): ColladaNode =
     of xmlEof: break
     else: discard
 
+proc parseChannel(x: var XmlParser): ColladaChannel =
+    ## Parse <channel> tag
+    result.new
+    result.source = ""
+    result.target = ""
+
+    while true:
+        case x.kind
+        of xmlAttribute:
+            case x.attrKey
+            of "source":
+                result.source = x.attrValue
+            of "target":
+                result.target = x.attrValue
+                result.kind = case result.target.split("/")[^1]
+                              of "matrix": ChannelKind.Matrix
+                              of "visibility": ChannelKind.Visibility
+                              else: ChannelKind.Matrix
+            else:
+                discard
+        of xmlElementEnd:
+            break
+        else:
+            discard
+        x.next()
+
+proc parseAnimation(x: var XmlParser): ColladaAnimation =
+    ## Parse <animation> tag
+    result = newColladaAnimation()
+
+    while true:
+        x.next()
+        case x.kind
+        of xmlAttribute:
+            case x.attrKey
+            of "id":
+                result.id = x.attrValue
+            else:
+                discard
+        of xmlElementStart:
+            if x.elementName == csAnimation:
+                result.children.add(x.parseAnimation())
+        of xmlElementOpen:
+            case x.elementName
+            of csAnimation:
+                discard
+            of csChannel:
+                result.channel = x.parseChannel()
+            else:
+                discard
+        of xmlElementClose:
+            continue
+        of xmlElementEnd:
+            case x.elementName
+            of csAnimation:
+                return result
+            else:
+                discard
+        else:
+            discard
+
+proc parseAnimations(x: var XmlParser, cs: var ColladaScene) =
+    ## Parse <library_animations> tag
+    while true:
+        x.next()
+        case x.kind
+        of xmlElementStart:
+            case x.elementName
+            of csAnimation:
+                cs.animations.add(x.parseAnimation())
+            else:
+                discard
+        of xmlElementEnd:
+            case x.elementName
+            of csLibraryAnimations:
+                break
+            else:
+                break
+        else:
+            discard
+
 proc parseScene(x: var XmlParser, cs: var ColladaScene) =
-  while true:
-    x.next()
-    case x.kind
-    of xmlElementOpen:
-      case x.elementName:
-      of csVisualScene:
+    ## Parse entire scene stored in COLLADA file
+    while true:
         x.next()
-        # sceneNodeID = x.attrValue
-        x.next()
-        cs.rootNode.name = x.attrValue()[0 .. ^1]
-      of csNode:
-        cs.rootNode.childs.add(parseNode(x))
-      else: discard
-    of xmlElementEnd:
-      case x.elementName:
-      of csLibraryVisualScenes: break
-      else: discard
-    of xmlEof: break
-    else: discard
+        case x.kind
+        of xmlElementOpen:
+            case x.elementName:
+            of csVisualScene:
+                x.next()
+                # sceneNodeID = x.attrValue
+                x.next()
+                cs.rootNode.name = x.attrValue()[0 .. ^1]
+            of csNode:
+                cs.rootNode.childs.add(parseNode(x))
+            else:
+                discard
+        of xmlElementEnd:
+            case x.elementName:
+            of csLibraryVisualScenes:
+                break
+            else:
+                discard
+        of xmlEof:
+            break
+        else:
+            discard
 
 proc load*(loader: ColladaLoader, s: Stream): ColladaScene =
-  result = newColladaScene()
+    ## Load Entire Scene from COLLADA file
+    result = newColladaScene()
 
-  var x: XmlParser
+    var x: XmlParser
+    x.open(s, "")
+    x.next()
 
-  x.open(s, "")
-  x.next()
+    while true:
+        case x.kind
+        of xmlElementStart:
+            case x.elementName
+            of csLibraryImages:
+                x.parseImages(result.childNodesImages)
+            of csLibraryEffect:
+                x.parseMaterialEffect(result.childNodesMaterial)
+            of csLibraryGeometries:
+                x.parseGeometry(result.childNodesGeometry)
+            of csLibraryVisualScenes:
+                x.parseScene(result)
+            of csLibraryAnimations:
+                x.parseAnimations(result)
+            else:
+                x.next()
+        of xmlEof:
+            break
+        else:
+            x.next()
 
-  while true:
-    case x.kind
-    of xmlElementStart:
-      case x.elementName
-      of csLibraryImages:
-        x.parseImages(result.childNodesImages)
-      # of csLibraryMaterial:
-      #   x.parseMaterial() # material id and name
-      of csLibraryEffect:
-        x.parseMaterialEffect(result.childNodesMaterial)
-      of csLibraryGeometries:
-        x.parseGeometry(result.childNodesGeometry)
-      of csLibraryVisualScenes:
-        x.parseScene(result)
-      else:
-        x.next()
-    of xmlEof: break
-    else: x.next()
+proc `$`*(c: ColladaChannel): string =
+    ## Return text representation of the animation channel
+    return "Channel (source: $#, target: $#, kind: $#)" % [c.source, c.target, $c.kind]
+
+proc `$`*(scene: ColladaScene): string =
+    ## Perform text representaiton of the scene
+    result =  "COLLADA Scene: " & scene.path & "\n"
+    result &= " * Animations [$#]: \n" % [$scene.animations.len]
+    for anim in scene.animations:
+        result &= "   * $#\n" % [anim.id]
+        result &= "     * $#\n" % [$anim.channel]
 
 when isMainModule and not defined(js):
-  let
-    f = open("cube.dae")
-    fs = newFileStream(f)
-    loader = ColladaLoader.new
+    let
+        f = open("balloon_animation_test.dae")
+        fs = newFileStream(f)
+        loader = ColladaLoader.new
+        scene = loader.load(fs)
 
-  discard loader.load(fs)
+    echo scene
