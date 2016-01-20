@@ -42,19 +42,19 @@ type ColladaGeometry* = ref object
   triangles*: seq[int]
   faceAccessor*: ColladaFaceAccessor
 
-proc parseArray4(source: string): array[0 .. 3, float32] = 
+proc parseArray4(source: string): array[0 .. 3, float32] =
   var i = 0
   for it in split(source):
     result[i] = parseFloat(it)
     inc(i)
 
-proc newColladaGeometry(): ColladaGeometry = 
+proc newColladaGeometry(): ColladaGeometry =
   result.new()
   result.vertices = newSeq[float32]()
   result.texcoords = newSeq[float32]()
   result.normals = newSeq[float32]()
   result.triangles = newSeq[int]()
-  
+
 type ColladaScene* = ref object
   name*: string
   childNodesNames*: seq[string]
@@ -64,7 +64,7 @@ type ColladaScene* = ref object
   childNodesMaterial*: seq[ColladaMaterial]
   childNodesImages*: seq[ColladaImage]
 
-proc newColladaScene(): ColladaScene = 
+proc newColladaScene(): ColladaScene =
   result.new()
   result.childNodesNames = newSeq[string]()
   result.childNodesMatrices = newSeq[string]()
@@ -125,7 +125,7 @@ proc parseImages(x: var XmlParser, images: var seq[ColladaImage]) = # collect te
     case x.kind
     of xmlElementOpen:
       case x.elementName:
-      of csImage: 
+      of csImage:
         x.next()
         # img id = x.attrValue()[0 .. ^1]
         x.next()
@@ -143,7 +143,7 @@ proc parseImages(x: var XmlParser, images: var seq[ColladaImage]) = # collect te
 
               img.location = x.charData()[0 .. ^1]
 
-            else: discard 
+            else: discard
           of xmlElementEnd:
             case x.elementName:
             of csImage: break
@@ -162,7 +162,7 @@ proc parseImages(x: var XmlParser, images: var seq[ColladaImage]) = # collect te
     of xmlEof: break
     else: discard
 
-proc parseMaterialElement(x: var XmlParser, matVector: var array[0 .. 3, float32], matTextureName: var string) = 
+proc parseMaterialElement(x: var XmlParser, matVector: var array[0 .. 3, float32], matTextureName: var string) =
   while true:
     x.next()
     case x.kind:
@@ -182,6 +182,7 @@ proc parseMaterialElement(x: var XmlParser, matVector: var array[0 .. 3, float32
       case x.elementName:
       of csTexture: break
       of csEffect: break
+      else: discard
     of xmlEof: break
     else: discard
 
@@ -192,9 +193,9 @@ proc parseMaterialEffect(x: var XmlParser, materials: var seq[ColladaMaterial]) 
     of xmlElementOpen:
       case x.elementName:
       # of csID: effectID.add(x.attrValue()[0 .. ^1])
-      of csEffect: 
+      of csEffect:
         var mat: ColladaMaterial
-        
+
         x.next()
         mat.name = x.attrValue()[0 .. ^1]
 
@@ -203,7 +204,7 @@ proc parseMaterialEffect(x: var XmlParser, materials: var seq[ColladaMaterial]) 
           case x.kind
           of xmlElementStart:
             case x.elementName:
-            of csEmission: 
+            of csEmission:
               while x.kind != xmlCharData:
                 x.next()
               mat.emission = parseArray4(x.charData)
@@ -213,19 +214,19 @@ proc parseMaterialEffect(x: var XmlParser, materials: var seq[ColladaMaterial]) 
               mat.ambient = parseArray4(x.charData)
             of csDiffuse:
               x.parseMaterialElement(mat.diffuse, mat.diffuseTextureName)
-            of csSpecular: 
+            of csSpecular:
               x.parseMaterialElement(mat.specular, mat.specularTextureName)
-            of csShininess: 
+            of csShininess:
               while x.kind != xmlCharData:
                 x.next()
               mat.shininess = parseFloat(x.charData)
-            of csReflective: 
+            of csReflective:
               x.parseMaterialElement(mat.reflective, mat.reflectiveTextureName)
-            of csReflectivity: 
+            of csReflectivity:
               while x.kind != xmlCharData:
                 x.next()
               mat.reflectivity = parseFloat(x.charData)
-            of csTransparent: 
+            of csTransparent:
               x.parseMaterialElement(mat.transparent, mat.transparentsTextureName)
             of csTransparency:
               while x.kind != xmlCharData:
@@ -241,15 +242,16 @@ proc parseMaterialEffect(x: var XmlParser, materials: var seq[ColladaMaterial]) 
           else: discard
 
         materials.add(mat)
+      else: discard
 
-    of xmlElementEnd: 
+    of xmlElementEnd:
       case x.elementName:
       of csLibraryEffect: break
       else: discard
     of xmlEof: break
     else: discard
 
-proc parseMesh(x: var XmlParser, geomObject: ColladaGeometry) = 
+proc parseMesh(x: var XmlParser, geomObject: ColladaGeometry) =
   var vertexSemantics = newSeq[string]()
 
   while true:
@@ -262,7 +264,7 @@ proc parseMesh(x: var XmlParser, geomObject: ColladaGeometry) =
         var arrayID = x.attrValue[0 .. ^1]
         x.next()
         # var arraySize = parseInt(x.attrValue[0 .. ^1])
-        while x.kind != xmlCharData:  
+        while x.kind != xmlCharData:
           x.next()
 
         if arrayID.contains("POSITION") or arrayID.contains("Position") or arrayID.contains("position"):
@@ -331,15 +333,15 @@ proc parseMesh(x: var XmlParser, geomObject: ColladaGeometry) =
               x.next()
               for it in split(x.charData()[0 .. ^1]):
                 geomObject.triangles.add(parseInt(it))
-            else: discard 
+            else: discard
           of xmlElementEnd:
             case x.elementName:
             of csTriangles: break
             else: discard
-          of xmlEof: break  
+          of xmlEof: break
           else: discard
       else: discard
-    of xmlElementEnd: 
+    of xmlElementEnd:
       case x.elementName:
       of csMesh: break
       else: discard
@@ -365,14 +367,14 @@ proc parseGeometry(x: var XmlParser, geom: var seq[ColladaGeometry]) = # need me
             of csMesh:
               x.parseMesh(geomObject)
             else: discard
-          of xmlElementEnd: 
+          of xmlElementEnd:
             case x.elementName:
             of csGeometry: break
             else: discard
           of xmlEof: break
           else: discard
-      else: discard 
-    of xmlElementEnd: 
+      else: discard
+    of xmlElementEnd:
       case x.elementName:
       of csLibraryGeometries: break
       else: discard
@@ -385,7 +387,7 @@ proc parseScene(x: var XmlParser, cs: ColladaScene) = # relationship, matrices, 
     case x.kind
     of xmlElementOpen:
       case x.elementName:
-      of csVisualScene: 
+      of csVisualScene:
         x.next()
         # sceneNodeID = x.attrValue
         x.next()
@@ -396,7 +398,7 @@ proc parseScene(x: var XmlParser, cs: ColladaScene) = # relationship, matrices, 
           case x.kind
           of xmlAttribute:
             case x.attrKey:
-            of csName: 
+            of csName:
               cs.childNodesNames.add(x.attrValue()[0 .. ^1])
             else: discard
           of xmlElementOpen:
@@ -407,7 +409,7 @@ proc parseScene(x: var XmlParser, cs: ColladaScene) = # relationship, matrices, 
                 case x.kind
                 of xmlElementClose: break
                 of xmlEof: break
-                else: discard               
+                else: discard
               x.next()
               cs.childNodesMatrices.add(x.charData()[0 .. ^1])
 
@@ -431,7 +433,7 @@ proc parseScene(x: var XmlParser, cs: ColladaScene) = # relationship, matrices, 
           of xmlEof: break
           else: discard
       else: discard
-    of xmlElementEnd: 
+    of xmlElementEnd:
       case x.elementName:
       of csLibraryVisualScenes: break
       else: discard
@@ -442,10 +444,10 @@ proc load*(loader: ColladaLoader, s: Stream): ColladaScene =
   result = newColladaScene()
 
   var x: XmlParser
-  
+
   x.open(s, "")
   x.next()
-  
+
   while true:
     case x.kind
     of xmlElementStart:
