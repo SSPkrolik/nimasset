@@ -170,6 +170,7 @@ const
     csGeometry = "geometry"
     csSource = "source"
     csFloatArray = "float_array"
+    csNameArray = "Name_array"
     csAccessor = "accessor"
     csTriangles = "triangles"
     csSemantic = "semantic"
@@ -561,6 +562,47 @@ proc parseChannel(x: var XmlParser): ColladaChannel =
             discard
         x.next()
 
+proc parseSource(x: var XmlParser): ColladaSource =
+    ## Parse <source> tag
+    result.new
+
+    var
+        localContext = csSource
+        counter = 0
+
+    while true:
+        x.next()
+        case x.kind
+        of xmlAttribute:
+            if x.attrKey == "id":
+                if localContext == csSource:
+                    result.id = x.attrValue
+                elif localContext == csFloatArray:
+                    result.kind = SourceKind.Float
+                    result.dataFloat = @[]
+                elif localContext == csNameArray:
+                    result.kind = SourceKind.Name
+                    result.dataName = @[]
+            elif x.attrKey == "count":
+                counter = x.attrValue.parseInt()
+        of xmlCharData:
+            for line in x.charData.strip().split("\n"):
+                for piece in line.split(" "):
+                    if result.kind == SourceKind.Float:
+                        result.dataFloat.add(piece.parseFloat())
+                    else:
+                        result.dataName.add(piece)
+        of xmlElementOpen:
+            if x.elementName == csFloatArray:
+                localContext = csFloatArray
+            elif x.elementName == csNameArray:
+                localContext = csNameArray
+        of xmlElementEnd:
+            if x.elementName == csSource:
+                break
+        else:
+            discard
+
 proc parseAnimation(x: var XmlParser): ColladaAnimation =
     ## Parse <animation> tag
     result = newColladaAnimation()
@@ -583,6 +625,8 @@ proc parseAnimation(x: var XmlParser): ColladaAnimation =
                 discard
             of csChannel:
                 result.channel = x.parseChannel()
+            of csSource:
+                result.sources.add(x.parseSource())
             else:
                 discard
         of xmlElementClose:
@@ -676,6 +720,10 @@ proc `$`*(c: ColladaChannel): string =
     ## Return text representation of the animation channel
     return "Channel (source: $#, target: $#, kind: $#)" % [c.source, c.target, $c.kind]
 
+proc `$`*(c: ColladaSource): string =
+    ## Return text representation of the animation source
+    return "Source (kind: $#)" % [$c.kind]
+
 proc `$`*(scene: ColladaScene): string =
     ## Perform text representaiton of the scene
     result =  "COLLADA Scene: " & scene.path & "\n"
@@ -683,6 +731,8 @@ proc `$`*(scene: ColladaScene): string =
     for anim in scene.animations:
         result &= "   * $#\n" % [anim.id]
         result &= "     * $#\n" % [$anim.channel]
+        for source in anim.sources:
+            result &= "     * $#\n" % [$source]
 
 when isMainModule and not defined(js):
     let
