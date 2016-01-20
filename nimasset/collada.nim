@@ -188,6 +188,7 @@ proc parseMaterialElement(x: var XmlParser, matVector: var array[0 .. 3, float32
       case x.elementName:
       of csTexture: break
       of csEffect: break
+      else: discard
     of xmlEof: break
     else: discard
 
