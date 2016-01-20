@@ -4,74 +4,173 @@ import times
 import strutils
 
 type
-  ErrBadCollada = ref object of Exception
+    ErrBadCollada* = ref object of Exception
+        ## Bad-formed COLLADA error
 
-  ColladaLoader* = ref object ## Loads COLLADA (*.dae) format for 3D assets
+    ColladaLoader* = ref object
+        ## Loads COLLADA (*.dae) format for 3D assets
 
-type ColladaMaterial* = object
-  name*: string
-  emission*: array[0 .. 3, float32]
-  ambient*: array[0 .. 3, float32]
-  diffuse*: array[0 .. 3, float32]
-  specular*: array[0 .. 3, float32]
-  shininess*: float32
-  reflective*: array[0 .. 3, float32]
-  reflectivity*: float32
-  transparent*: array[0 .. 3, float32]
-  transparency*: float32
-  diffuseTextureName*: string
-  specularTextureName*: string
-  reflectiveTextureName*: string
-  transparentsTextureName*: string
+    ColladaMaterial* = object
+        ## Material info deserialized from dae (COLLADA) file.
+        ## Contains material parameters for shading.
+        name*: string                         ## Material name from dae file
+        emission*: array[0 .. 3, float32]
+        ambient*: array[0 .. 3, float32]
+        diffuse*: array[0 .. 3, float32]
+        specular*: array[0 .. 3, float32]
+        shininess*: float32
+        reflective*: array[0 .. 3, float32]
+        reflectivity*: float32
+        transparent*: array[0 .. 3, float32]
+        transparency*: float32
+        diffuseTextureName*: string
+        specularTextureName*: string
+        reflectiveTextureName*: string
+        transparentsTextureName*: string
 
-type ColladaImage* = object
-  name*: string
-  location*: string
+    ColladaImage* = object
+        ## Reference to Image file
+        name*: string
+        location*: string
 
-type ColladaFaceAccessor* = object
-  vertexOfset*: int
-  normalOfset*: int
-  texcoordOfset*: int
+    ColladaFaceAccessor* = object
+        vertexOfset*: int
+        normalOfset*: int
+        texcoordOfset*: int
 
-type ColladaGeometry* = ref object
-  name*: string
-  materialName*: string
-  vertices*: seq[float32]
-  texcoords*: seq[float32]
-  normals*: seq[float32]
-  triangles*: seq[int]
-  faceAccessor*: ColladaFaceAccessor
+    ColladaGeometry* = ref object
+        name*: string
+        materialName*: string
+        vertices*: seq[float32]
+        texcoords*: seq[float32]
+        normals*: seq[float32]
+        triangles*: seq[int]
+        faceAccessor*: ColladaFaceAccessor
+
+    SourceKind* {.pure.} = enum
+        ## Kind of source data stored in COLLADA file
+        IDREF
+        Name
+        Bool
+        Float
+        Int
+
+    ColladaSource* = ref object
+        ## Source data stored in COLLADA file
+        id*:            string
+        case kind*:     SourceKind
+        of SourceKind.IDREF:
+        dataIDREF*:     seq[string]
+        of SourceKind.Name:
+        dataName*:      seq[string]
+        of SourceKind.Bool:
+        dataBool*:      seq[bool]
+        of SourceKind.Float:
+        dataFloat*:     seq[float32]
+        of SourceKind.Int:
+        dataInt*:       seq[int32]
 
 proc parseArray4(source: string): array[0 .. 3, float32] =
-  var i = 0
-  for it in split(source):
-    result[i] = parseFloat(it)
-    inc(i)
+    var i = 0
+    for it in split(source):
+        result[i] = parseFloat(it)
+        inc(i)
 
 proc newColladaGeometry(): ColladaGeometry =
-  result.new()
-  result.vertices = newSeq[float32]()
-  result.texcoords = newSeq[float32]()
-  result.normals = newSeq[float32]()
-  result.triangles = newSeq[int]()
+    result.new()
+    result.vertices = newSeq[float32]()
+    result.texcoords = newSeq[float32]()
+    result.normals = newSeq[float32]()
+    result.triangles = newSeq[int]()
+
+proc newColladaSource(kind: SourceKind): ColladaSource =
+    ## Collada Source constructor
+    result.new
+    result.kind = kind
+    case kind
+    of SourceKind.IDREF:
+        result.dataIDREF = @[]
+    of SourceKind.Name:
+        result.dataName  = @[]
+    of SourceKind.Bool:
+        result.dataBool  = @[]
+    of SourceKind.Float:
+        result.dataFloat = @[]
+    of SourceKind.Int:
+        result.dataInt   = @[]
+
+type ColladaChannel* = ref object
+    ## Collada Animation Channel
+
+const
+    ## Input semantics kinds. These are made constants, not enums because 'semantics'
+    ## value set is open, and may contain more values than those predefined
+    ## in COLLADA 1.4 Standard.
+    isInput         = "INPUT"
+    isInterpolation = "INTERPOLATION"
+    isInTangent     = "IN_TANGENT"
+    isOutTangent    = "OUT_TANGENT"
+    isOutput        = "OUTPUT"
+
+type InterpolationKind* {.pure.} = enum
+    Linear   = "LINEAR"
+    Bezier   = "BEZIER"
+    Cardinal = "CARDINAL"
+    Hermite  = "HERMITE"
+    Bspline  = "BSPLINE"
+    Step     = "STEP"
+
+let Interpolations* = {   ## Set of COLLADA supported Interpolations
+    InterpolationKind.Linear,
+    InterpolationKind.Bezier,
+    InterpolationKind.Cardinal,
+    InterpolationKind.Hermite,
+    InterpolationKind.Bspline,
+    InterpolationKind.Step
+}
+
+type ColladaInput = ref object
+    ## Collada Input Definition
+    semantics*: string
+    source*: ColladaSource
+
+type ColladaSampler* = ref object
+    ## Collada Animation Sampler
+    inputs*: seq[ColladaInput]
+
+type ColladaAnimation* = ref object
+    children*: seq[ColladaAnimation]
+    sources* : seq[ColladaSource]
+    sampler* : ColladaSampler
+    channel* : ColladaChannel
+
+proc newColladaAnimation(): ColladaAnimation =
+    ## Create empty animation object
+    result.new
+    result.sampler.new
+    result.channel.new
+    result.children = @[]
+    result.sources  = @[]
 
 type ColladaScene* = ref object
-  name*: string
-  childNodesNames*: seq[string]
+  name*:               string
+  childNodesNames*:    seq[string]
   childNodesMatrices*: seq[string]
-  childNodesAlpha*: seq[float32]
+  childNodesAlpha*:    seq[float32]
   childNodesGeometry*: seq[ColladaGeometry]
   childNodesMaterial*: seq[ColladaMaterial]
-  childNodesImages*: seq[ColladaImage]
+  childNodesImages*:   seq[ColladaImage]
+  childNodesAnimation*:seq[ColladaAnimation]
 
 proc newColladaScene(): ColladaScene =
   result.new()
-  result.childNodesNames = newSeq[string]()
-  result.childNodesMatrices = newSeq[string]()
-  result.childNodesAlpha = newSeq[float32]()
-  result.childNodesGeometry = newSeq[ColladaGeometry]()
-  result.childNodesMaterial = newSeq[ColladaMaterial]()
-  result.childNodesImages = newSeq[ColladaImage]()
+  result.childNodesNames    = @[]
+  result.childNodesMatrices = @[]
+  result.childNodesAlpha    = @[]
+  result.childNodesGeometry = @[]
+  result.childNodesMaterial = @[]
+  result.childNodesImages   = @[]
+  result.childNodesAnimation= @[]
 
 const
   csNone  = ""
@@ -118,6 +217,11 @@ const
   csInstanceMaterial = "instance_material"
   csInstanceVisualScene = "instance_visual_scene"
   csVisibility = "visibility"
+  csLibraryAnimation = "library_animations"
+  csAnimation = "animation"
+  csChannel = "channel"
+  csSampler = "sampler"
+  csExtra   = "extra"
 
 proc parseImages(x: var XmlParser, images: var seq[ColladaImage]) = # collect textures location
   while true:
@@ -163,28 +267,28 @@ proc parseImages(x: var XmlParser, images: var seq[ColladaImage]) = # collect te
     else: discard
 
 proc parseMaterialElement(x: var XmlParser, matVector: var array[0 .. 3, float32], matTextureName: var string) =
-  while true:
-    x.next()
-    case x.kind:
-    of xmlElementOpen:
-      case x.elementName:
-      of csTexture:
+    while true:
         x.next()
-        matTextureName = x.attrValue()[0 .. ^1]
-        break
-      of csColor:
-        while x.kind != xmlCharData:
-          x.next()
-        matVector = parseArray4(x.charData)
-        break
-      else: discard
-    of xmlElementClose:
-      case x.elementName:
-      of csTexture: break
-      of csEffect: break
-      else: discard
-    of xmlEof: break
-    else: discard
+        case x.kind:
+        of xmlElementOpen:
+            case x.elementName:
+            of csTexture:
+                x.next()
+                matTextureName = x.attrValue()[0 .. ^1]
+                break
+            of csColor:
+                while x.kind != xmlCharData:
+                    x.next()
+                matVector = parseArray4(x.charData)
+                break
+            else:
+                discard
+        of xmlElementClose:
+            discard
+        of xmlEof:
+            break
+        else:
+            discard
 
 proc parseMaterialEffect(x: var XmlParser, materials: var seq[ColladaMaterial]) = # material settings
   while true:
@@ -240,7 +344,6 @@ proc parseMaterialEffect(x: var XmlParser, materials: var seq[ColladaMaterial]) 
             else: discard
           of xmlEof: break
           else: discard
-
         materials.add(mat)
       else: discard
 
@@ -380,6 +483,9 @@ proc parseGeometry(x: var XmlParser, geom: var seq[ColladaGeometry]) = # need me
       else: discard
     of xmlEof: break
     else: discard
+
+proc parseAnimation(x: var XmlParser, cs: var ColladaScene) =
+    ## Parse <animation> tag
 
 proc parseScene(x: var XmlParser, cs: ColladaScene) = # relationship, matrices, opacity
   while true:
