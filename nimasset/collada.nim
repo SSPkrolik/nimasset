@@ -8,70 +8,57 @@ type
 
   ColladaLoader* = ref object ## Loads COLLADA (*.dae) format for 3D assets
 
-type ColladaMaterial* = object
-  name*: string
-  emission*: array[0 .. 3, float32]
-  ambient*: array[0 .. 3, float32]
-  diffuse*: array[0 .. 3, float32]
-  specular*: array[0 .. 3, float32]
-  shininess*: float32
-  reflective*: array[0 .. 3, float32]
-  reflectivity*: float32
-  transparent*: array[0 .. 3, float32]
-  transparency*: float32
-  diffuseTextureName*: string
-  specularTextureName*: string
-  reflectiveTextureName*: string
-  transparentsTextureName*: string
+type 
+  ColladaMaterial* = object
+    name*: string
+    emission*: array[4, float32]
+    ambient*: array[4, float32]
+    diffuse*: array[4, float32]
+    specular*: array[4, float32]
+    shininess*: float32
+    reflective*: array[4, float32]
+    reflectivity*: float32
+    transparent*: array[4, float32]
+    normalmap*: array[4, float32]
+    transparency*: float32
+    diffuseTextureName*: string
+    specularTextureName*: string
+    reflectiveTextureName*: string
+    transparentTextureName*: string
+    normalmapTextureName*: string
 
-type ColladaImage* = object
-  name*: string
-  location*: string
+  ColladaImage* = object
+    name*: string
+    location*: string
 
-type ColladaFaceAccessor* = object
-  vertexOfset*: int
-  normalOfset*: int
-  texcoordOfset*: int
+  ColladaFaceAccessor* = object
+    vertexOfset*: int
+    normalOfset*: int
+    texcoordOfset*: int
 
-type ColladaGeometry* = ref object
-  name*: string
-  materialName*: string
-  vertices*: seq[float32]
-  texcoords*: seq[float32]
-  normals*: seq[float32]
-  triangles*: seq[int]
-  faceAccessor*: ColladaFaceAccessor
+  ColladaGeometry* = ref object
+    name*: string
+    materialName*: string
+    vertices*: seq[float32]
+    texcoords*: seq[float32]
+    normals*: seq[float32]
+    triangles*: seq[int]
+    faceAccessor*: ColladaFaceAccessor
 
-proc parseArray4(source: string): array[0 .. 3, float32] = 
-  var i = 0
-  for it in split(source):
-    result[i] = parseFloat(it)
-    inc(i)
+  ColladaNode* = ref object
+    name*: string
+    matrix*: string
+    geometry*: string
+    material*: string
+    childs*: seq[ColladaNode]
 
-proc newColladaGeometry(): ColladaGeometry = 
-  result.new()
-  result.vertices = newSeq[float32]()
-  result.texcoords = newSeq[float32]()
-  result.normals = newSeq[float32]()
-  result.triangles = newSeq[int]()
-  
-type ColladaScene* = ref object
-  name*: string
-  childNodesNames*: seq[string]
-  childNodesMatrices*: seq[string]
-  childNodesAlpha*: seq[float32]
-  childNodesGeometry*: seq[ColladaGeometry]
-  childNodesMaterial*: seq[ColladaMaterial]
-  childNodesImages*: seq[ColladaImage]
-
-proc newColladaScene(): ColladaScene = 
-  result.new()
-  result.childNodesNames = newSeq[string]()
-  result.childNodesMatrices = newSeq[string]()
-  result.childNodesAlpha = newSeq[float32]()
-  result.childNodesGeometry = newSeq[ColladaGeometry]()
-  result.childNodesMaterial = newSeq[ColladaMaterial]()
-  result.childNodesImages = newSeq[ColladaImage]()
+  ColladaScene* = ref object
+    path*: string 
+    pathShared*: string
+    rootNode*: ColladaNode
+    childNodesGeometry*: seq[ColladaGeometry]
+    childNodesMaterial*: seq[ColladaMaterial]
+    childNodesImages*: seq[ColladaImage]
 
 const
   csNone  = ""
@@ -99,6 +86,7 @@ const
   csReflectivity = "reflectivity"
   csTransparent = "transparent"
   csTransparency = "transparency"
+  csNormalmap = "normalmap"
   csGeometry = "geometry"
   csSource = "source"
   csFloatArray = "float_array"
@@ -119,6 +107,30 @@ const
   csInstanceVisualScene = "instance_visual_scene"
   csVisibility = "visibility"
 
+proc newColladaGeometry(): ColladaGeometry = 
+  result.new()
+  result.vertices = newSeq[float32]()
+  result.texcoords = newSeq[float32]()
+  result.normals = newSeq[float32]()
+  result.triangles = newSeq[int]()
+
+proc newColladaNode(): ColladaNode = 
+  result.new()
+  result.childs = newSeq[ColladaNode]()
+
+proc newColladaScene(): ColladaScene = 
+  result.new()
+  result.rootNode = newColladaNode()
+  result.childNodesGeometry = newSeq[ColladaGeometry]()
+  result.childNodesMaterial = newSeq[ColladaMaterial]()
+  result.childNodesImages = newSeq[ColladaImage]()
+
+proc parseArray4(source: string): array[0 .. 3, float32] = 
+  var i = 0
+  for it in split(source):
+    result[i] = parseFloat(it)
+    inc(i)
+
 proc parseImages(x: var XmlParser, images: var seq[ColladaImage]) = # collect textures location
   while true:
     x.next()
@@ -129,10 +141,8 @@ proc parseImages(x: var XmlParser, images: var seq[ColladaImage]) = # collect te
         x.next()
         # img id = x.attrValue()[0 .. ^1]
         x.next()
-
         var img: ColladaImage
         img.name = x.attrValue()[0 .. ^1]
-
         while true:
           x.next()
           case x.kind
@@ -140,9 +150,7 @@ proc parseImages(x: var XmlParser, images: var seq[ColladaImage]) = # collect te
             case x.elementName:
             of csInitFrom:
               x.next()
-
               img.location = x.charData()[0 .. ^1]
-
             else: discard 
           of xmlElementEnd:
             case x.elementName:
@@ -151,9 +159,7 @@ proc parseImages(x: var XmlParser, images: var seq[ColladaImage]) = # collect te
             else: discard
           of xmlEof: break
           else: discard
-
         images.add(img)
-
       else: discard
     of xmlElementEnd:
       case x.elementName:
@@ -191,13 +197,10 @@ proc parseMaterialEffect(x: var XmlParser, materials: var seq[ColladaMaterial]) 
     case x.kind
     of xmlElementOpen:
       case x.elementName:
-      # of csID: effectID.add(x.attrValue()[0 .. ^1])
       of csEffect: 
         var mat: ColladaMaterial
-        
         x.next()
         mat.name = x.attrValue()[0 .. ^1]
-
         while true:
           x.next()
           case x.kind
@@ -226,21 +229,22 @@ proc parseMaterialEffect(x: var XmlParser, materials: var seq[ColladaMaterial]) 
                 x.next()
               mat.reflectivity = parseFloat(x.charData)
             of csTransparent: 
-              x.parseMaterialElement(mat.transparent, mat.transparentsTextureName)
+              x.parseMaterialElement(mat.transparent, mat.transparentTextureName)
             of csTransparency:
               while x.kind != xmlCharData:
                 x.next()
               mat.transparency = parseFloat(x.charData)
+            of csNormalmap: 
+              x.parseMaterialElement(mat.normalmap, mat.normalmapTextureName)
             else: discard
           of xmlElementEnd:
             case x.elementName:
             of csEffect: break
-            # of csLibraryEffect: break
             else: discard
           of xmlEof: break
           else: discard
-
         materials.add(mat)
+      else: discard
 
     of xmlElementEnd: 
       case x.elementName:
@@ -260,11 +264,8 @@ proc parseMesh(x: var XmlParser, geomObject: ColladaGeometry) =
       of csFloatArray:
         x.next()
         var arrayID = x.attrValue[0 .. ^1]
-        x.next()
-        # var arraySize = parseInt(x.attrValue[0 .. ^1])
         while x.kind != xmlCharData:  
           x.next()
-
         if arrayID.contains("POSITION") or arrayID.contains("Position") or arrayID.contains("position"):
           for it in split(x.charData()):
             geomObject.vertices.add(parseFloat(it))
@@ -276,7 +277,6 @@ proc parseMesh(x: var XmlParser, geomObject: ColladaGeometry) =
             geomObject.texcoords.add(parseFloat(it))
         else:
           echo("no vertex data in node")
-
       of csVertices:
         while true:
           x.next()
@@ -285,7 +285,7 @@ proc parseMesh(x: var XmlParser, geomObject: ColladaGeometry) =
             case x.elementName:
             of csInput:
               x.next()
-              vertexSemantics.add(x.attrValue[0 .. ^1]) # collect VERTEX "childs" to compute strides in faces for vertices and normals
+              vertexSemantics.add(x.attrValue[0 .. ^1])
             else: discard
           of xmlElementEnd:
             case x.elementName:
@@ -296,9 +296,7 @@ proc parseMesh(x: var XmlParser, geomObject: ColladaGeometry) =
       of csTriangles:
         x.next()
         x.next()
-
         geomObject.materialName = x.attrValue[0 .. ^1]
-
         while true:
           x.next()
           case x.kind
@@ -309,7 +307,6 @@ proc parseMesh(x: var XmlParser, geomObject: ColladaGeometry) =
               var semantic = x.attrValue[0 .. ^1]
               x.next()
               var offset = parseInt(x.attrValue)
-
               if semantic == "VERTEX":
                 for it in vertexSemantics:
                   if it == "POSITION":
@@ -346,7 +343,7 @@ proc parseMesh(x: var XmlParser, geomObject: ColladaGeometry) =
     of xmlEof: break
     else: discard
 
-proc parseGeometry(x: var XmlParser, geom: var seq[ColladaGeometry]) = # need merge vertex attrib data
+proc parseGeometry(x: var XmlParser, geom: var seq[ColladaGeometry]) =
   while true:
     x.next()
     case x.kind
@@ -379,7 +376,45 @@ proc parseGeometry(x: var XmlParser, geom: var seq[ColladaGeometry]) = # need me
     of xmlEof: break
     else: discard
 
-proc parseScene(x: var XmlParser, cs: ColladaScene) = # relationship, matrices, opacity
+proc parseNode(x: var XmlParser): ColladaNode = 
+  result = newColladaNode()
+
+  while true:
+    x.next()
+    case x.kind
+    of xmlAttribute:
+      case x.attrKey:
+      of csName: 
+         result.name = x.attrValue()[0 .. ^1]
+      else: discard
+    of xmlElementOpen:
+      case x.elementName:
+      of csMatrix:
+        while true:
+          x.next()
+          case x.kind
+          of xmlElementClose: break
+          of xmlEof: break
+          else: discard               
+        x.next()
+        result.matrix = x.charData()[0 .. ^1]
+      of csInstanceMaterial:
+        x.next()
+        result.material = x.attrValue()[0 .. ^1]
+      of csInstanceGeometry:
+        x.next()
+        result.geometry = x.attrValue()[0 .. ^1]
+      of csNode:
+        result.childs.add(parseNode(x))
+      else: discard
+    of xmlElementEnd:
+      case x.elementName:
+      of csNode: break
+      else: discard
+    of xmlEof: break
+    else: discard
+
+proc parseScene(x: var XmlParser, cs: var ColladaScene) = 
   while true:
     x.next()
     case x.kind
@@ -389,47 +424,9 @@ proc parseScene(x: var XmlParser, cs: ColladaScene) = # relationship, matrices, 
         x.next()
         # sceneNodeID = x.attrValue
         x.next()
-        cs.name = x.attrValue()[0 .. ^1]
+        cs.rootNode.name = x.attrValue()[0 .. ^1]
       of csNode:
-        while true:
-          x.next()
-          case x.kind
-          of xmlAttribute:
-            case x.attrKey:
-            of csName: 
-              cs.childNodesNames.add(x.attrValue()[0 .. ^1])
-            else: discard
-          of xmlElementOpen:
-            case x.elementName:
-            of csMatrix:
-              while true:
-                x.next()
-                case x.kind
-                of xmlElementClose: break
-                of xmlEof: break
-                else: discard               
-              x.next()
-              cs.childNodesMatrices.add(x.charData()[0 .. ^1])
-
-            of csInstanceMaterial:
-              x.next()
-              # cs.childNodesMaterialName.add(x.attrValue()[0 .. ^1])
-            of csInstanceGeometry:
-              x.next()
-              # cs.childNodesGeometryName.add(x.attrValue()[0 .. ^1])
-            else: discard
-          of xmlElementStart:
-            case x.elementName:
-            of csVisibility:
-              x.next()
-              cs.childNodesAlpha.add(parseFloat(x.charData()[0 .. ^1]))
-            else: discard
-          of xmlElementEnd:
-            case x.elementName:
-            of csNode: break
-            else: discard
-          of xmlEof: break
-          else: discard
+        cs.rootNode.childs.add(parseNode(x))
       else: discard
     of xmlElementEnd: 
       case x.elementName:
@@ -438,7 +435,7 @@ proc parseScene(x: var XmlParser, cs: ColladaScene) = # relationship, matrices, 
     of xmlEof: break
     else: discard
 
-proc load*(loader: ColladaLoader, s: Stream): ColladaScene =
+proc load*(s: Stream): ColladaScene =
   result = newColladaScene()
 
   var x: XmlParser
