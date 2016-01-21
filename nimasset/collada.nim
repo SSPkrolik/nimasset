@@ -89,20 +89,21 @@ type
         dataFloat*:     seq[float32]
         of SourceKind.Int:
         dataInt*:       seq[int32]
+        paramType*:     string
 
     ColladaInput = ref object
         ## Collada Input Definition
-        semantics*: string
-        source*:    string
+        semantic*: string
+        source*:   string
 
     ColladaSampler* = ref object
         ## Collada Animation Sampler
         id*:            string
-        input*:         seq[ColladaInput]
-        output*:        seq[ColladaInput]
-        inTangent*:     seq[ColladaInput]
-        outTangent*:    seq[ColladaInput]
-        interpolation*: seq[ColladaInput]
+        input*:         ColladaInput
+        output*:        ColladaInput
+        inTangent*:     ColladaInput
+        outTangent*:    ColladaInput
+        interpolation*: ColladaInput
 
     ColladaAnimation* = ref object
         ## Collada Animation Descriptor
@@ -133,11 +134,17 @@ const
     ## Input semantics kinds. These are made constants, not enums because 'semantics'
     ## value set is open, and may contain more values than those predefined
     ## in COLLADA 1.4 Standard.
-    isInput         = "INPUT"
-    isInterpolation = "INTERPOLATION"
-    isInTangent     = "IN_TANGENT"
-    isOutTangent    = "OUT_TANGENT"
-    isOutput        = "OUTPUT"
+    isInput*         = "INPUT"
+    isInterpolation* = "INTERPOLATION"
+    isInTangent*     = "IN_TANGENT"
+    isOutTangent*    = "OUT_TANGENT"
+    isOutput*        = "OUTPUT"
+
+const
+    ## Source param type defines how source data must be interpreted
+    ptName*     = "name"
+    ptFloat*    = "float"
+    ptFloat4x4* = "float4x4"
 
 const
     ## Collada XML Tag names according to COLLADA 1.4 Standard.
@@ -192,6 +199,7 @@ const
     csChannel = "channel"
     csSampler = "sampler"
     csExtra   = "extra"
+    csParam   = "param"
 
 proc parseArray4(source: string): array[0 .. 3, float32] =
     var i = 0
@@ -237,8 +245,6 @@ proc newColladaAnimation(): ColladaAnimation =
     ## Create empty animation object
     result.new
     result.id = ""
-    result.sampler = newColladaSampler()
-    result.channel = newColladaChannel()
     result.children = @[]
     result.sources  = @[]
 
@@ -547,7 +553,7 @@ proc parseChannel(x: var XmlParser): ColladaChannel =
         of xmlAttribute:
             case x.attrKey
             of "source":
-                result.source = x.attrValue
+                result.source = x.attrValue[1..^0]
             of "target":
                 result.target = x.attrValue
                 result.kind = case result.target.split("/")[^1]
@@ -558,6 +564,63 @@ proc parseChannel(x: var XmlParser): ColladaChannel =
                 discard
         of xmlElementEnd:
             break
+        else:
+            discard
+        x.next()
+
+proc parseInput(x: var XmlParser): ColladaInput =
+    ## Parse <input> tag
+    result.new
+    result.semantic = ""
+    result.source = ""
+
+    while true:
+        case x.kind
+        of xmlAttribute:
+            case x.attrKey
+            of "semantic":
+                result.semantic = x.attrValue
+            of "source":
+                result.source = x.attrValue[1..^0]
+            else:
+                discard
+        of xmlElementClose:
+            break
+        else:
+            discard
+        x.next()
+
+proc parseSampler(x: var XmlParser): ColladaSampler =
+    ## Parse <spampler> tag
+    result.new
+
+    while true:
+        case x.kind
+        of xmlElementOpen:
+            case x.elementName
+            of csInput:
+                let newInput = x.parseInput()
+                case newInput.semantic
+                of isInput:
+                    result.input = newInput
+                of isOutput:
+                    result.output = newInput
+                of isInTangent:
+                    result.inTangent = newInput
+                of isOutTangent:
+                    result.outTangent = newInput
+                of isInterpolation:
+                    result.interpolation = newInput
+                else:
+                    discard
+            else:
+                discard
+        of xmlAttribute:
+            if x.attrKey == "id":
+                result.id = x.attrValue
+        of xmlElementEnd:
+            if x.elementName == csSampler:
+                break
         else:
             discard
         x.next()
@@ -585,6 +648,9 @@ proc parseSource(x: var XmlParser): ColladaSource =
                     result.dataName = @[]
             elif x.attrKey == "count":
                 counter = x.attrValue.parseInt()
+            elif x.attrKey == "type":
+                if localContext == csParam:
+                    result.paramType = x.attrValue
         of xmlCharData:
             for line in x.charData.strip().split("\n"):
                 for piece in line.split(" "):
@@ -597,6 +663,8 @@ proc parseSource(x: var XmlParser): ColladaSource =
                 localContext = csFloatArray
             elif x.elementName == csNameArray:
                 localContext = csNameArray
+            elif x.elementName == csParam:
+                localContext = csParam
         of xmlElementEnd:
             if x.elementName == csSource:
                 break
@@ -627,6 +695,8 @@ proc parseAnimation(x: var XmlParser): ColladaAnimation =
                 result.channel = x.parseChannel()
             of csSource:
                 result.sources.add(x.parseSource())
+            of csSampler:
+                result.sampler = x.parseSampler()
             else:
                 discard
         of xmlElementClose:
@@ -645,18 +715,22 @@ proc parseAnimations(x: var XmlParser, cs: var ColladaScene) =
     while true:
         x.next()
         case x.kind
-        of xmlElementStart:
-            case x.elementName
-            of csAnimation:
-                cs.animations.add(x.parseAnimation())
-            else:
-                discard
+        #of xmlElementStart:
+        #    echo "START: ", x.elementName
+        #    case x.elementName
+        #    of csAnimation:
+        #        echo "ADDING ANIMATION"
+        #        #cs.animations.add(x.parseAnimation())
+        #    else:
+        #        discard
+        of xmlElementOpen:
+            cs.animations.add(x.parseAnimation())
         of xmlElementEnd:
             case x.elementName
             of csLibraryAnimations:
                 break
             else:
-                break
+                discard
         else:
             discard
 
@@ -718,21 +792,64 @@ proc load*(loader: ColladaLoader, s: Stream): ColladaScene =
 
 proc `$`*(c: ColladaChannel): string =
     ## Return text representation of the animation channel
-    return "Channel (source: $#, target: $#, kind: $#)" % [c.source, c.target, $c.kind]
+    return "Channel (source: ...$#, target: .../$#, kind: $#)" % [c.source[^20..^0], c.target.split("/")[1], $c.kind]
+
+proc `$`*(c: ColladaInput): string =
+    return "       * $# source: ...$#)" % [c.semantic, c.source[^20..^0]]
+
+proc `$`*(s: ColladaSampler): string =
+    ## Return text representation of the sampler
+    result = "Sampler (id: $#):\n" % [s.id]
+    if not isNil(s.input): result &= $s.input & "\n"
+    else: result &= "       * nil\n"
+    if not isNil(s.output): result &= $s.output & "\n"
+    else: result &= "       * nil\n"
+    if not isNil(s.inTangent): result &= $s.inTangent & "\n"
+    else: result &= "       * nil\n"
+    if not isNil(s.outTangent): result &= $s.outTangent & "\n"
+    else: result &= "       * nil\n"
+    if not isNil(s.interpolation): result &= $s.interpolation
+    else: result &= "       * nil"
+
 
 proc `$`*(c: ColladaSource): string =
     ## Return text representation of the animation source
-    return "Source (kind: $#)" % [$c.kind]
+    result = "Source (id: ...$#, kind: $#, paramType: $#, data: " % [($c.id)[^20..^0], $c.kind, $c.paramType]
+
+    case c.kind
+    of SourceKind.IDREF:
+        result &= "$#...] ($#)" % [($c.dataIDREF)[0..40], $c.dataIDREF.len]
+    of SourceKind.Name:
+        result &= "$#...] ($#)" % [($c.dataName)[0..40], $c.dataName.len]
+    of SourceKind.Bool:
+        result &= "$#...] ($#)" % [($c.dataBool)[0..40], $c.dataBool.len]
+    of SourceKind.Float:
+        result &= "$#...] ($#)" % [($c.dataFloat)[0..40], $c.dataFloat.len]
+    of SourceKind.Int:
+        result &= "$#...] ($#)" % [($c.dataInt)[0..40], $c.dataInt.len]
+
+proc `$`*(anim: ColladaAnimation): string =
+    ## Text representation of animation info
+    result = "   * Animation: $#\n" % [anim.id]
+    if not isNil(anim.channel):
+        result &= "     * $#\n" % [$anim.channel]
+    if not isNil(anim.sampler):
+        result &= "     * $#\n" % [$anim.sampler]
+    for source in anim.sources:
+        result &= "     * $#\n" % [$source]
+    if anim.children.len > 0:
+        result &= "   | Animation children:\n"
+    for a in anim.children:
+        result &= $a
+    if anim.children.len > 0:
+        result &= "   ---------------------"
 
 proc `$`*(scene: ColladaScene): string =
     ## Perform text representaiton of the scene
-    result =  "COLLADA Scene: " & scene.path & "\n"
+    result =  "COLLADA Scene: '" & scene.path & "'\n"
     result &= " * Animations [$#]: \n" % [$scene.animations.len]
     for anim in scene.animations:
-        result &= "   * $#\n" % [anim.id]
-        result &= "     * $#\n" % [$anim.channel]
-        for source in anim.sources:
-            result &= "     * $#\n" % [$source]
+        result &= $anim
 
 when isMainModule and not defined(js):
     let
