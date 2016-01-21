@@ -7,7 +7,11 @@ objects for loading assets within Nim applications.
 Supported asset formats:
 
   * `.obj` - low-level loader of WaveFront OBJ files containing 3d models
-  * `.dae` - Open COLLADA v. 1.4 scene loader with support of geometry, materials, and lighting (animation coming soon.)
+  * `.dae` - Open COLLADA v. 1.4 scene loader with support of loading:
+    * geometry
+    * materials
+    * animation
+    * lighting
 
 ## Loading `obj` files
 
