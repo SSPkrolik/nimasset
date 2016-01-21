@@ -52,3 +52,8 @@ let
 
 let scene = loader.load(fs)
 ```
+
+## Special Thanks to Contributors
+
+ * @yglukhov for JavaScript fixes
+ * @bogdan-voevoda for implementation of most of COLLADA loader
