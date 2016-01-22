@@ -201,6 +201,10 @@ const
     csExtra   = "extra"
     csParam   = "param"
 
+proc isComplex*(anim: ColladaAnimation): bool =
+    ## Checks if animation is a complex animation (has subanimations) or not
+    return if anim.children.len > 0: false else: true
+
 proc parseArray4(source: string): array[0 .. 3, float32] =
     var i = 0
     for it in split(source):
@@ -555,8 +559,8 @@ proc parseChannel(x: var XmlParser): ColladaChannel =
             of "source":
                 result.source = x.attrValue[1..^0]
             of "target":
-                result.target = x.attrValue
-                result.kind = case result.target.split("/")[^1]
+                result.target = x.attrValue.split("/")[0]
+                result.kind = case x.attrValue.split("/")[^1]
                               of "matrix": ChannelKind.Matrix
                               of "visibility": ChannelKind.Visibility
                               else: ChannelKind.Matrix
