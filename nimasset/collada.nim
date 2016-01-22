@@ -252,6 +252,13 @@ proc newColladaAnimation(): ColladaAnimation =
     result.children = @[]
     result.sources  = @[]
 
+proc sourceById*(a: ColladaAnimation, n: string): ColladaSource =
+    ## Returns source bound to animation by its id
+    result = nil
+    for s in a.sources:
+        if s.id == n:
+            return s
+
 proc newColladaNode(): ColladaNode =
     result.new()
     result.children = newSeq[ColladaNode]()
