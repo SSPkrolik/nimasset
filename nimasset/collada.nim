@@ -54,11 +54,9 @@ type
         matrix*: string
         geometry*: string
         material*: string
-        childs*: seq[ColladaNode]
+        children*: seq[ColladaNode]
 
     ColladaScene* = ref object
-        path*: string
-        pathShared*: string
         rootNode*: ColladaNode
         childNodesGeometry*: seq[ColladaGeometry]
         childNodesMaterial*: seq[ColladaMaterial]
@@ -215,7 +213,7 @@ proc newColladaAnimation(): ColladaAnimation =
 
 proc newColladaNode(): ColladaNode =
     result.new()
-    result.childs = newSeq[ColladaNode]()
+    result.children = newSeq[ColladaNode]()
 
 proc newColladaScene(): ColladaScene =
     result.new()
@@ -499,7 +497,7 @@ proc parseNode(x: var XmlParser): ColladaNode =
         x.next()
         result.geometry = x.attrValue()[0 .. ^1]
       of csNode:
-        result.childs.add(parseNode(x))
+        result.children.add(parseNode(x))
       else: discard
     of xmlElementEnd:
       case x.elementName:
@@ -520,7 +518,7 @@ proc parseScene(x: var XmlParser, cs: var ColladaScene) =
         x.next()
         cs.rootNode.name = x.attrValue()[0 .. ^1]
       of csNode:
-        cs.rootNode.childs.add(parseNode(x))
+        cs.rootNode.children.add(parseNode(x))
       else: discard
     of xmlElementEnd:
       case x.elementName:
