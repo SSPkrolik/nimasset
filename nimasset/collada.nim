@@ -203,7 +203,7 @@ const
 
 proc isComplex*(anim: ColladaAnimation): bool =
     ## Checks if animation is a complex animation (has subanimations) or not
-    return if anim.children.len > 0: false else: true
+    return anim.children.len > 0
 
 proc parseArray4(source: string): array[0 .. 3, float32] =
     var i = 0
