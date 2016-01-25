@@ -115,7 +115,6 @@ type
 
     ColladaScene* = ref object
         path*: string
-        pathShared*: string
         rootNode*: ColladaNode
         childNodesGeometry*: seq[ColladaGeometry]
         childNodesMaterial*: seq[ColladaMaterial]
