@@ -803,7 +803,10 @@ proc load*(loader: ColladaLoader, s: Stream): ColladaScene =
 
 proc `$`*(c: ColladaChannel): string =
     ## Return text representation of the animation channel
-    return "Channel (source: ...$#, target: .../$#, kind: $#)" % [c.source[^20..^0], c.target.split("/")[1], $c.kind]
+    if not isNil(c):
+        return "Channel (source: ...$#, target: .../$#, kind: $#)" % [c.source[^20..^0], c.target.split("/")[1], $c.kind]
+    else:
+        return "Channel NIL"
 
 proc `$`*(c: ColladaInput): string =
     return "       * $# source: ...$#)" % [c.semantic, c.source[^20..^0]]
