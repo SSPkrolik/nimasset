@@ -245,6 +245,23 @@ proc newColladaSampler(): ColladaSampler =
     result.new
     result.id = ""
 
+proc `$`*(c: ColladaInput): string =
+    return "       * $# source: ...$#)" % [c.semantic, c.source[^20..^1]]
+
+proc `$`*(s: ColladaSampler): string =
+    ## Return text representation of the sampler
+    result = "Sampler (id: $#):\n" % [s.id]
+    if not isNil(s.input): result &= $s.input & "\n"
+    else: result &= "       * nil\n"
+    if not isNil(s.output): result &= $s.output & "\n"
+    else: result &= "       * nil\n"
+    if not isNil(s.inTangent): result &= $s.inTangent & "\n"
+    else: result &= "       * nil\n"
+    if not isNil(s.outTangent): result &= $s.outTangent & "\n"
+    else: result &= "       * nil\n"
+    if not isNil(s.interpolation): result &= $s.interpolation
+    else: result &= "       * nil"
+
 proc newColladaAnimation(): ColladaAnimation =
     ## Create empty animation object
     result.new
@@ -564,7 +581,7 @@ proc parseChannel(x: var XmlParser): ColladaChannel =
         of xmlAttribute:
             case x.attrKey
             of "source":
-                result.source = x.attrValue[1..^0]
+                result.source = x.attrValue[1..^1]
             of "target":
                 result.target = x.attrValue.split("/")[0]
                 result.kind = case x.attrValue.split("/")[^1]
@@ -590,38 +607,38 @@ proc parseInput(x: var XmlParser): ColladaInput =
         of xmlAttribute:
             case x.attrKey
             of "semantic":
-                result.semantic = x.attrValue
+                result.semantic = x.attrValue[0..^1]
             of "source":
-                result.source = x.attrValue[1..^0]
+                result.source = x.attrValue[1..^1]
             else:
                 discard
         of xmlElementClose:
-            break
+            return
         else:
             discard
         x.next()
 
 proc parseSampler(x: var XmlParser): ColladaSampler =
-    ## Parse <spampler> tag
-    result.new
+    ## Parse <sampler> tag
+    result = newColladaSampler()
 
     while true:
         case x.kind
         of xmlElementOpen:
             case x.elementName
             of csInput:
-                let newInput = x.parseInput()
-                case newInput.semantic
+                let parsedInput = x.parseInput()
+                case parsedInput.semantic
                 of isInput:
-                    result.input = newInput
+                    result.input = parsedInput
                 of isOutput:
-                    result.output = newInput
+                    result.output = parsedInput
                 of isInTangent:
-                    result.inTangent = newInput
+                    result.inTangent = parsedInput
                 of isOutTangent:
-                    result.outTangent = newInput
+                    result.outTangent = parsedInput
                 of isInterpolation:
-                    result.interpolation = newInput
+                    result.interpolation = parsedInput
                 else:
                     discard
             else:
@@ -631,7 +648,7 @@ proc parseSampler(x: var XmlParser): ColladaSampler =
                 result.id = x.attrValue
         of xmlElementEnd:
             if x.elementName == csSampler:
-                break
+                return
         else:
             discard
         x.next()
@@ -650,7 +667,7 @@ proc parseSource(x: var XmlParser): ColladaSource =
         of xmlAttribute:
             if x.attrKey == "id":
                 if localContext == csSource:
-                    result.id = x.attrValue
+                    result.id = x.attrValue[0..^1]
                 elif localContext == csFloatArray:
                     result.kind = SourceKind.Float
                     result.dataFloat = @[]
@@ -661,7 +678,7 @@ proc parseSource(x: var XmlParser): ColladaSource =
                 counter = x.attrValue.parseInt()
             elif x.attrKey == "type":
                 if localContext == csParam:
-                    result.paramType = x.attrValue
+                    result.paramType = x.attrValue[0..^1]
         of xmlCharData:
             for line in x.charData.strip().split("\n"):
                 for piece in line.split(" "):
@@ -692,7 +709,7 @@ proc parseAnimation(x: var XmlParser): ColladaAnimation =
         of xmlAttribute:
             case x.attrKey
             of "id":
-                result.id = x.attrValue
+                result.id = x.attrValue[0..^1]
             else:
                 discard
         of xmlElementStart:
@@ -726,14 +743,6 @@ proc parseAnimations(x: var XmlParser, cs: var ColladaScene) =
     while true:
         x.next()
         case x.kind
-        #of xmlElementStart:
-        #    echo "START: ", x.elementName
-        #    case x.elementName
-        #    of csAnimation:
-        #        echo "ADDING ANIMATION"
-        #        #cs.animations.add(x.parseAnimation())
-        #    else:
-        #        discard
         of xmlElementOpen:
             cs.animations.add(x.parseAnimation())
         of xmlElementEnd:
@@ -804,31 +813,13 @@ proc load*(loader: ColladaLoader, s: Stream): ColladaScene =
 proc `$`*(c: ColladaChannel): string =
     ## Return text representation of the animation channel
     if not isNil(c):
-        return "Channel (source: ...$#, target: .../$#, kind: $#)" % [c.source[^20..^0], c.target, $c.kind]
+        return "Channel (source: ...$#, target: .../$#, kind: $#)" % [c.source[^20..^1], c.target, $c.kind]
     else:
         return "Channel NIL"
 
-proc `$`*(c: ColladaInput): string =
-    return "       * $# source: ...$#)" % [c.semantic, c.source[^20..^0]]
-
-proc `$`*(s: ColladaSampler): string =
-    ## Return text representation of the sampler
-    result = "Sampler (id: $#):\n" % [s.id]
-    if not isNil(s.input): result &= $s.input & "\n"
-    else: result &= "       * nil\n"
-    if not isNil(s.output): result &= $s.output & "\n"
-    else: result &= "       * nil\n"
-    if not isNil(s.inTangent): result &= $s.inTangent & "\n"
-    else: result &= "       * nil\n"
-    if not isNil(s.outTangent): result &= $s.outTangent & "\n"
-    else: result &= "       * nil\n"
-    if not isNil(s.interpolation): result &= $s.interpolation
-    else: result &= "       * nil"
-
-
 proc `$`*(c: ColladaSource): string =
     ## Return text representation of the animation source
-    result = "Source (id: ...$#, kind: $#, paramType: $#, data: " % [($c.id)[^20..^0], $c.kind, $c.paramType]
+    result = "Source (id: ...$#, kind: $#, paramType: $#, data: " % [($c.id)[^20..^1], $c.kind, $c.paramType]
 
     case c.kind
     of SourceKind.IDREF:
