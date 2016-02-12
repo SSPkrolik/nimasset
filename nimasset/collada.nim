@@ -680,7 +680,7 @@ proc parseSource(x: var XmlParser): ColladaSource =
                     result.paramType = x.attrValue[0..^1]
         of xmlCharData:
             for line in x.charData.strip().split("\n"):
-                for piece in line.split(" "):
+                for piece in line.split({' ', '\L'}):
                     if result.kind == SourceKind.Float:
                         result.dataFloat.add(piece.parseFloat())
                     else:
