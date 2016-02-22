@@ -24,6 +24,8 @@ type
         transparent*: array[4, float32]
         normalmap*: array[4, float32]
         transparency*: float32
+        emissionTextureName*: string
+        ambientTextureName*: string
         diffuseTextureName*: string
         specularTextureName*: string
         reflectiveTextureName*: string
@@ -52,6 +54,11 @@ type
     ColladaNode* = ref object
         name*: string
         matrix*: string
+        translation*: string
+        rotationX*: string
+        rotationY*: string
+        rotationZ*: string
+        scale*: string
         geometry*: string
         material*: string
         children*: seq[ColladaNode]
@@ -189,6 +196,12 @@ const
     csScene = "scene"
     csNode = "node"
     csMatrix = "matrix"
+    csTranslate = "translate"
+    csRotate = "rotate"
+    csRotateZ = "rotateZ"
+    csRotateY = "rotateY"
+    csRotateX = "rotateX"
+    csScale = "scale"
     csInstanceGeometry = "instance_geometry"
     csInstanceMaterial = "instance_material"
     csInstanceVisualScene = "instance_visual_scene"
@@ -362,13 +375,9 @@ proc parseMaterialEffect(x: var XmlParser, materials: var seq[ColladaMaterial]) 
                     of xmlElementStart:
                         case x.elementName:
                         of csEmission:
-                            while x.kind != xmlCharData:
-                                x.next()
-                            mat.emission = parseArray4(x.charData)
+                            x.parseMaterialElement(mat.ambient, mat.emissionTextureName)
                         of csAmbient:
-                            while x.kind != xmlCharData:
-                                x.next()
-                            mat.ambient = parseArray4(x.charData)
+                            x.parseMaterialElement(mat.ambient, mat.ambientTextureName)
                         of csDiffuse:
                             x.parseMaterialElement(mat.diffuse, mat.diffuseTextureName)
                         of csSpecular:
@@ -553,6 +562,28 @@ proc parseNode(x: var XmlParser): ColladaNode =
           else: discard
         x.next()
         result.matrix = x.charData()[0 .. ^1]
+      of csTranslate:
+        while x.kind != xmlCharData:
+          x.next()
+        result.translation = x.charData()[0 .. ^1]
+      of csRotate:
+        x.next()
+        if x.attrValue == csRotateZ:
+          while x.kind != xmlCharData:
+            x.next()
+          result.rotationZ = x.charData()[0 .. ^1]
+        elif x.attrValue == csRotateY:
+            while x.kind != xmlCharData:
+              x.next()
+            result.rotationY = x.charData()[0 .. ^1]
+        elif x.attrValue == csRotateX:
+            while x.kind != xmlCharData:
+              x.next()
+            result.rotationX = x.charData()[0 .. ^1]
+      of csScale:
+        while x.kind != xmlCharData:
+          x.next()
+        result.scale = x.charData()[0 .. ^1]
       of csInstanceMaterial:
         x.next()
         result.material = x.attrValue()[0 .. ^1]
