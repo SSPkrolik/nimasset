@@ -53,7 +53,7 @@ type
 
     ColladaNode* = ref object
         name*: string
-        matrix*: string
+        matrix*: seq[float32]
         translation*: string
         rotationX*: string
         rotationY*: string
@@ -62,11 +62,17 @@ type
         geometry*: string
         material*: string
         children*: seq[ColladaNode]
+        kind*: NodeKind
 
     ChannelKind* {.pure.} = enum
         ## Kind of channel interpretation (at least like Maya names it)
         Matrix     = "matrix"
         Visibility = "visibility"
+
+    NodeKind* {.pure.} = enum
+        ## Kind of node
+        Node
+        Joint
 
     ColladaChannel* = ref object
         ## Collada Animation Channel
@@ -120,6 +126,14 @@ type
         sampler* : ColladaSampler
         channel* : ColladaChannel
 
+    ColladaSkinController* = ref object
+        id*:                string
+        source*:            string
+        sources*:           seq[ColladaSource]
+        bindShapeMatrix*:   seq[float32]
+        weightsPerVertex*:  int
+        influences*:        seq[int16]
+
     ColladaScene* = ref object
         path*: string
         rootNode*: ColladaNode
@@ -127,6 +141,7 @@ type
         childNodesMaterial*: seq[ColladaMaterial]
         childNodesImages*:   seq[ColladaImage]
         animations*:         seq[ColladaAnimation]
+        skinControllers*:    seq[ColladaSkinController]
 
     InterpolationKind* {.pure.} = enum
         Linear   = "LINEAR"
@@ -161,6 +176,7 @@ const
     csLibraryEffect = "library_effects"
     csLibraryGeometries = "library_geometries"
     csLibraryVisualScenes = "library_visual_scenes"
+    csLibraryControllers = "library_controllers"
     csMaterial = "material"
     csID = "id"
     csName = "name"
@@ -195,6 +211,7 @@ const
     csVisualScene = "visual_scene"
     csScene = "scene"
     csNode = "node"
+    csType = "type"
     csMatrix = "matrix"
     csTranslate = "translate"
     csRotate = "rotate"
@@ -212,6 +229,9 @@ const
     csSampler = "sampler"
     csExtra   = "extra"
     csParam   = "param"
+    csController = "controller"
+    csVertexWeights = "vertex_weights"
+    csBindShapeMatrix = "bind_shape_matrix"
 
 proc isComplex*(anim: ColladaAnimation): bool =
     ## Checks if animation is a complex animation (has subanimations) or not
@@ -290,7 +310,7 @@ proc sourceById*(a: ColladaAnimation, n: string): ColladaSource =
 
 proc newColladaNode(): ColladaNode =
     result.new()
-    result.children = newSeq[ColladaNode]()
+    result.children = @[]
 
 proc newColladaScene(): ColladaScene =
     result.new()
@@ -490,7 +510,7 @@ proc parseMesh(x: var XmlParser, geomObject: ColladaGeometry) =
             case x.elementName:
             of csP:
               x.next()
-              for it in split(x.charData()[0 .. ^1]):
+              for it in split(x.charData()):
                 geomObject.triangles.add(parseInt(it))
             else: discard
           of xmlElementEnd:
@@ -550,6 +570,11 @@ proc parseNode(x: var XmlParser): ColladaNode =
       case x.attrKey:
       of csName:
          result.name = x.attrValue()[0 .. ^1]
+      of csType:
+         case x.attrValue():
+         of "JOINT": result.kind = NodeKind.Joint
+         of "NODE": result.kind = NodeKind.Node
+         else: discard
       else: discard
     of xmlElementOpen:
       case x.elementName:
@@ -561,7 +586,9 @@ proc parseNode(x: var XmlParser): ColladaNode =
           of xmlEof: break
           else: discard
         x.next()
-        result.matrix = x.charData()[0 .. ^1]
+        result.matrix = @[]
+        for part in x.charData().split():
+            result.matrix.add(parseFloat(part))
       of csTranslate:
         while x.kind != xmlCharData:
           x.next()
@@ -710,12 +737,11 @@ proc parseSource(x: var XmlParser): ColladaSource =
                 if localContext == csParam:
                     result.paramType = x.attrValue[0..^1]
         of xmlCharData:
-            for line in x.charData.strip().split("\n"):
-                for piece in line.split({' ', '\L'}):
-                    if result.kind == SourceKind.Float:
-                        result.dataFloat.add(piece.parseFloat())
-                    else:
-                        result.dataName.add(piece)
+            for piece in x.charData.split({' ', '\L', '\r'}):
+                if result.kind == SourceKind.Float:
+                    result.dataFloat.add(piece.parseFloat())
+                else:
+                    result.dataName.add(piece)
         of xmlElementOpen:
             if x.elementName == csFloatArray:
                 localContext = csFloatArray
@@ -800,16 +826,113 @@ proc parseScene(x: var XmlParser, cs: var ColladaScene) =
                 cs.rootNode.children.add(parseNode(x))
             else:
                 discard
-        of xmlElementEnd:
-            case x.elementName:
-            of csLibraryVisualScenes:
-                break
-            else:
-                discard
         of xmlEof:
             break
         else:
             discard
+
+proc skipUntilClose(x: var XmlParser) =
+    var opens = 0
+    while true:
+        x.next()
+        case x.kind
+        of xmlElementOpen: inc opens
+        of xmlElementClose:
+            if opens == 0: break
+            dec opens
+        else: discard
+
+proc parseVertexWeights(x: var XmlParser, sc: ColladaSkinController) =
+    var vcount = newSeq[int]()
+    sc.influences = @[]
+    while true:
+        x.next()
+        case x.kind
+        of xmlElementStart:
+            case x.elementName
+            of "vcount":
+                while x.kind != xmlCharData:
+                    x.next()
+                for part in x.charData().split():
+                    let c = parseInt(part)
+                    sc.weightsPerVertex = max(c, sc.weightsPerVertex)
+                    vcount.add(c)
+                sc.influences = newSeq[int16](sc.weightsPerVertex * vcount.len * 2)
+            of "v":
+                while x.kind != xmlCharData:
+                    x.next()
+                assert(sc.weightsPerVertex != 0)
+                var curVertex = 0
+                var curBone = 0
+                var isBone = 0
+                for part in x.charData().split():
+                    sc.influences[(curVertex * sc.weightsPerVertex + curBone) * 2 + isBone] = int16(parseInt(part))
+                    if isBone == 1:
+                        isBone = 0
+                        inc curBone
+                        if curBone == vcount[curVertex]:
+                            curBone = 0
+                            inc curVertex
+                    else:
+                        isBone = 1
+            else:
+                discard
+        of xmlElementEnd:
+            case x.elementName
+            of csVertexWeights:
+                break
+            else:
+                discard
+        else:
+            discard
+
+proc parseSkinController(x: var XmlParser, cs: var ColladaScene): ColladaSkinController =
+    result.new()
+    result.sources = @[]
+    while true:
+        x.next()
+        case x.kind
+        of xmlAttribute:
+            case x.attrKey
+            of csId: result.id = x.attrValue[0 .. ^1]
+            of csSource: result.source = x.attrValue[0 .. ^1]
+            else: discard
+        of xmlElementOpen:
+            case x.elementName:
+            of csSource:
+                result.sources.add(parseSource(x))
+            of csVertexWeights:
+                parseVertexWeights(x, result)
+            else:
+                discard
+        of xmlElementStart:
+            case x.elementName
+            of csBindShapeMatrix:
+                while x.kind != xmlCharData:
+                    x.next()
+                result.bindShapeMatrix = @[]
+                for part in x.charData().split():
+                    result.bindShapeMatrix.add(parseFloat(part))
+            else:
+                discard
+        of xmlElementEnd:
+            if x.elementName == csController: break
+        else: discard
+
+proc parseControllers(x: var XmlParser, cs: var ColladaScene) =
+    ## Parse <library_controllers> tag
+    while true:
+        x.next()
+        case x.kind
+        of xmlElementOpen:
+            case x.elementName:
+            of csController:
+                if cs.skinControllers.isNil: cs.skinControllers = @[]
+                cs.skinControllers.add(parseSkinController(x, cs))
+            else:
+                discard
+        else:
+            break
 
 proc load*(loader: ColladaLoader, s: Stream): ColladaScene =
     ## Load Entire Scene from COLLADA file
@@ -833,6 +956,8 @@ proc load*(loader: ColladaLoader, s: Stream): ColladaScene =
                 x.parseScene(result)
             of csLibraryAnimations:
                 x.parseAnimations(result)
+            of csLibraryControllers:
+                x.parseControllers(result)
             else:
                 x.next()
         of xmlEof:
@@ -886,6 +1011,14 @@ proc `$`*(scene: ColladaScene): string =
     for anim in scene.animations:
         result &= $anim
 
+proc boneAndWeightForVertex*(sc: ColladaSkinController, vertexIndex, boneIndex: int): tuple[bone: string, weight: float32] =
+    # Not recommended for performance reasons
+    for s in sc.sources:
+        if s.kind == SourceKind.Float:
+            result.weight = s.dataFloat[sc.influences[(vertexIndex * sc.weightsPerVertex + boneIndex) * 2 + 1]]
+        elif s.kind == SourceKind.Name:
+            result.bone = s.dataName[sc.influences[(vertexIndex * sc.weightsPerVertex + boneIndex) * 2 + 0]]
+
 when isMainModule and not defined(js):
     let
         f = open("balloon_animation_test.dae")
@@ -894,3 +1027,8 @@ when isMainModule and not defined(js):
         scene = loader.load(fs)
 
     echo scene
+    #[
+    echo boneAndWeightForVertex(scene.skinControllers[0], 0, 0)
+    echo boneAndWeightForVertex(scene.skinControllers[0], 1, 0)
+    echo boneAndWeightForVertex(scene.skinControllers[0], 8, 0)
+    ]#
