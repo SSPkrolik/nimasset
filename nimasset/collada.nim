@@ -858,6 +858,8 @@ proc parseVertexWeights(x: var XmlParser, sc: ColladaSkinController) =
                     sc.weightsPerVertex = max(c, sc.weightsPerVertex)
                     vcount.add(c)
                 sc.influences = newSeq[int16](sc.weightsPerVertex * vcount.len * 2)
+                for i in 0 ..< sc.influences.len:
+                    sc.influences[i] = -1
             of "v":
                 while x.kind != xmlCharData:
                     x.next()
@@ -1014,10 +1016,42 @@ proc `$`*(scene: ColladaScene): string =
 proc boneAndWeightForVertex*(sc: ColladaSkinController, vertexIndex, boneIndex: int): tuple[bone: string, weight: float32] =
     # Not recommended for performance reasons
     for s in sc.sources:
-        if s.kind == SourceKind.Float:
-            result.weight = s.dataFloat[sc.influences[(vertexIndex * sc.weightsPerVertex + boneIndex) * 2 + 1]]
+        if s.id.endsWith("-Weights"):
+            let infl = sc.influences[(vertexIndex * sc.weightsPerVertex + boneIndex) * 2 + 1]
+            if infl == -1:
+                result.weight = 0.0
+            else:
+                result.weight = s.dataFloat[infl]
+
         elif s.kind == SourceKind.Name:
-            result.bone = s.dataName[sc.influences[(vertexIndex * sc.weightsPerVertex + boneIndex) * 2 + 0]]
+            let infl = sc.influences[(vertexIndex * sc.weightsPerVertex + boneIndex) * 2 + 0]
+            if infl == -1:
+                result.bone = nil
+            else:
+                result.bone = s.dataName[sc.influences[(vertexIndex * sc.weightsPerVertex + boneIndex) * 2 + 0]]
+
+proc boneInvMatrix*(sc: ColladaSkinController, boneName: string): seq[float32] =
+    # var matrixes = newSeq[array[16, float32]]()
+    # var names = newSeq[string]()
+    var index = -1
+
+    for s in sc.sources:
+        if s.id.endsWith("-Joints"):
+            for i in 0 ..< s.dataName.len:
+                if s.dataName[i] == boneName:
+                    index = i
+
+    if index == -1:
+        return nil
+
+    for s in sc.sources:
+        if s.id.endsWith("-Matrices"):
+            var matData = newSeq[float32](16)
+            for i in 0..15:
+                matData[i] = s.dataFloat[16 * index + i]
+
+            return matData
+
 
 when isMainModule and not defined(js):
     let
