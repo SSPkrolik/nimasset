@@ -240,8 +240,9 @@ proc isComplex*(anim: ColladaAnimation): bool =
 proc parseArray4(source: string): array[0 .. 3, float32] =
     var i = 0
     for it in split(source):
-        result[i] = parseFloat(it)
-        inc(i)
+        if it.len > 0:
+            result[i] = parseFloat(it)
+            inc(i)
 
 proc newColladaGeometry(): ColladaGeometry =
     result.new()
@@ -452,13 +453,16 @@ proc parseMesh(x: var XmlParser, geomObject: ColladaGeometry) =
           x.next()
         if arrayID.contains("POSITION") or arrayID.contains("Position") or arrayID.contains("position"):
           for it in split(x.charData()):
-            geomObject.vertices.add(parseFloat(it))
+            if it.len > 0:
+                geomObject.vertices.add(parseFloat(it))
         elif arrayID.contains("NORMAL") or arrayID.contains("Normal") or arrayID.contains("normal"):
           for it in split(x.charData()):
-            geomObject.normals.add(parseFloat(it))
+            if it.len > 0:
+                geomObject.normals.add(parseFloat(it))
         elif arrayID.contains("UV") or arrayID.contains("Uv") or arrayID.contains("uv"):
           for it in split(x.charData()):
-            geomObject.texcoords.add(parseFloat(it))
+            if it.len > 0:
+                geomObject.texcoords.add(parseFloat(it))
         else:
           echo("no vertex data in node")
       of csVertices:
@@ -588,7 +592,8 @@ proc parseNode(x: var XmlParser): ColladaNode =
         x.next()
         result.matrix = @[]
         for part in x.charData().split():
-            result.matrix.add(parseFloat(part))
+            if part.len > 0:
+                result.matrix.add(parseFloat(part))
       of csTranslate:
         while x.kind != xmlCharData:
           x.next()
@@ -738,10 +743,11 @@ proc parseSource(x: var XmlParser): ColladaSource =
                     result.paramType = x.attrValue[0..^1]
         of xmlCharData:
             for piece in x.charData.split({' ', '\L', '\r'}):
-                if result.kind == SourceKind.Float:
-                    result.dataFloat.add(piece.parseFloat())
-                else:
-                    result.dataName.add(piece)
+                if piece.len > 0:
+                    if result.kind == SourceKind.Float:
+                        result.dataFloat.add(piece.parseFloat())
+                    else:
+                        result.dataName.add(piece)
         of xmlElementOpen:
             if x.elementName == csFloatArray:
                 localContext = csFloatArray
@@ -914,7 +920,8 @@ proc parseSkinController(x: var XmlParser, cs: var ColladaScene): ColladaSkinCon
                     x.next()
                 result.bindShapeMatrix = @[]
                 for part in x.charData().split():
-                    result.bindShapeMatrix.add(parseFloat(part))
+                    if part.len > 0:
+                        result.bindShapeMatrix.add(parseFloat(part))
             else:
                 discard
         of xmlElementEnd:
