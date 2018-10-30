@@ -14,54 +14,62 @@ type
         Binary
         Ascii
 
-    FBXVec2* = object
+    Vec2* = object
         ## 2-dimensional FBX vector
         x*: float64
         y*: float64
 
-    FBXVec3* = object
+    Vec3* = object
         ## 3-dimensional FBX vector
         x*: float64
         y*: float64
         z*: float64
 
-    FBXVec4* = object
+    Vec4* = object
         ## 4-dimensional FBX vector
         x*: float64
         y*: float64
         z*: float64
         w*: float64
 
-    FBXMaxtrix* = array[0..15, float64]
+    DataView* = ref object
+        pBegin*: ptr uint8
+        pEnd*:   ptr uint8
+        binary*: bool
+
+    Maxtrix* = array[0..15, float64]
         ## 4*4 FBX Matrix
 
-    FBXQuat* = object
+    Quat* = object
         ## FBX Quaternion type
         x*: float64
         y*: float64
         z*: float64
         w*: float64
 
-    FBXColor* = object
+    Color* = object
         ## FBX Color type    
         r*: float32
         g*: float32
         b*: float32
 
-
     FBXLoader* = ref object
         ## Loads Autodesk FBX (*.fbx) format for 3D assets
 
-    FBXElementPropertyKind* = uint8
+    ElementPropertyKind* = uint8
         ## Data type of FBX Element Property
 
-    FBXElementProperty* = object
+    Property* = ref object
         ## FBX Element Property
+        m_kind:  ElementPropertyKind
+        m_count: int
+        m_value: DataView
+        m_next:  Property
 
-    FBXElement* = ref object
+    Element* = ref object
         ## Element of FBX Scene
 
-    FBXObjectKind* {.pure.} = enum
+    ObjectKind* {.pure.} = enum
         ## Type of FBX Object
         Root               = (0,  "ROOT")
         Geometry           = (1,  "GEOMETRY")
@@ -78,64 +86,107 @@ type
         AnimationCurve     = (12, "ANIMATION_CURVE")
         AnimationCurveNode = (13, "ANIMATION_CURVE_NODE")
 
-    FBXObject* = ref object of RootObj
+    Object* = ref object of RootObj
         ## FBX Object Base
-        m_kind:   FBXObjectKind
+        m_kind:   ObjectKind
         m_isNode: bool
-        m_scene:  FBXScene
+        m_scene:  Scene
 
-    FBXRoot* = ref object of FBXObject
+    Root* = ref object of Object
         ## FBX Scene Root Object
 
-    FBXScene* = ref object
+    Scene* = ref object
         ## Scene imported from OGEX file format
-        m_root_element: FBXElement
-        m_root: FBXRoot
+        m_root_element: Element
+        m_root: Root
 
 const
-    fbxepkLong*:         FBXElementPropertyKind = 'L'.uint8
-    fbxepkInteger*:      FBXElementPropertyKind = 'I'.uint8
-    fbxepkString*:       FBXElementPropertyKind = 'S'.uint8
-    fbxepkFloat*:        FBXElementPropertyKind = 'F'.uint8
-    fbxepkDouble*:       FBXElementPropertyKind = 'D'.uint8
-    fbxepkArrayDouble*:  FBXElementPropertyKind = 'd'.uint8
-    fbxepkArrayInteger*: FBXElementPropertyKind = 'i'.uint8
-    fbxepkArrayLong*:    FBXElementPropertyKind = 'l'.uint8
-    fbxepkArrayFloat*:   FBXElementPropertyKind = 'f'.uint8
+    epkLong*:         ElementPropertyKind = 'L'.uint8
+    epkInteger*:      ElementPropertyKind = 'I'.uint8
+    epkString*:       ElementPropertyKind = 'S'.uint8
+    epkFloat*:        ElementPropertyKind = 'F'.uint8
+    epkDouble*:       ElementPropertyKind = 'D'.uint8
+    epkArrayDouble*:  ElementPropertyKind = 'd'.uint8
+    epkArrayInteger*: ElementPropertyKind = 'i'.uint8
+    epkArrayLong*:    ElementPropertyKind = 'l'.uint8
+    epkArrayFloat*:   ElementPropertyKind = 'f'.uint8
 
-proc newFBXObject*(scene: FBXScene, element: FBXElement): FBXObject =
+proc parseArrayRaw[T](property: Property, maxSize: int): seq[T] =
+    ## Parse raw array
+    result = @[]
+    if property.m_value.binary:
+        let elemSize: int = case property.m_kind
+                            of epkArrayLong:    8
+                            of epkArrayDouble:  8
+                            of epkArrayFloat:   4
+                            of epkArrayInteger: 4
+                            else: 0
+
+proc toU64*(view: DataView): uint64 =
+    ##
+
+proc toI64*(view: DataView): int64 =
+    ##
+
+proc toInt*(view: DataView): int =
+    ##
+
+proc toU32*(view: DataView): int =
+    ##
+
+proc toFloat64*(view: DataView): float64 =
+    ##
+
+proc toFloat32*(view: DataView): float32 =
+    ##
+
+method kind*(property: Property): ElementPropertyKind {.base.} = property.m_kind
+    ## Returns Element Property Type
+
+method next*(property: Property): Property {.base.} = property.m_next
+    ## Returns element's next property
+
+method value*(property: Property): DataView {.base.} = property.m_value
+    ## Get value of element property
+
+method count*(property: Property): int {.base.} =
+    ## Get number of pieces in element's property
+    assert property.m_kind in [epkArrayDouble, epkArrayInteger, epkArrayFloat, epkArrayLong]
+    if property.m_value.binary:
+        return int(cast[ptr uint32](property.m_value.pBegin)[])
+    return property.m_count
+
+proc newObject*(scene: Scene, element: Element): Object =
     ## Constructs new FBX Object linked to scene and element
     new(result)
     result.m_scene = scene
 
-method kind*(obj: FBXObject): FBXObjectKind {.base.} = 
+method kind*(obj: Object): ObjectKind {.base.} = 
     ## Get FBXObject type
     raise newException(Exception, "Method not implemented")
 
-
-proc rootElement*(scene: FBXScene): FBXElement = scene.m_root_element
+proc rootElement*(scene: Scene): Element = scene.m_root_element
     ## Get FBX Scene root element
 
-proc root*(scene: FBXScene): FBXRoot = scene.m_root
+proc root*(scene: Scene): Root = scene.m_root
     ## Get FBX Scene root object
 
-proc newFBXScene*(): FBXScene =
+proc newFBXScene*(): Scene =
     ## Empty FBX Scene constructor
     result.new()
-    result.m_root_element = new(FBXElement)
+    result.m_root_element = new(Element)
 
-proc newFBXScene*(path: string): FBXScene =
+proc newScene*(path: string): Scene =
     ## Construct new FBX Scene from file
     result = newFBXScene()
 
-
-proc load*(loader: FBXLoader, s: Stream, kind: FBXKind = FBXKind.Ascii): FBXScene =
+proc load*(loader: FBXLoader, s: Stream, kind: FBXKind = FBXKind.Ascii): Scene =
     ## Load FBX-encoded data from stream
     if kind == FBXKind.Binary:
         raise new(ErrUnsupported)
     return newFBXScene()
 
-proc `$`(scene: FBXScene): string =
+proc `$`(scene: Scene): string =
     ## Ogex string stringificator
     result = "FBX Scene {\n"
     result &= "}"
