@@ -1,3 +1,4 @@
+import math
 import streams
 import pegs
 import times
@@ -32,12 +33,12 @@ type
         z*: float64
         w*: float64
 
-    DataView* = ref object
+    DataView* = object
         pBegin*: ptr uint8
         pEnd*:   ptr uint8
         binary*: bool
 
-    Maxtrix* = array[0..15, float64]
+    Matrix* = array[0..15, float64]
         ## 4*4 FBX Matrix
 
     Quat* = object
@@ -52,6 +53,15 @@ type
         r*: float32
         g*: float32
         b*: float32
+
+    RotationOrder* {.pure.} = enum
+        EulerXYZ = 0,
+        EulerXZY,
+        EulerYZX,
+        EulerYXZ,
+        EulerZXY,
+        EulerZYX,
+        SphericXYZ  # Currently unsupported. Treated as EULER_XYZ.
 
     FBXLoader* = ref object
         ## Loads Autodesk FBX (*.fbx) format for 3D assets
@@ -100,6 +110,18 @@ type
         m_root_element: Element
         m_root: Root
 
+    FBXHeader {.packed.} = object
+        ## FBX File Header record
+        magic:    array[0 .. 20, uint8]
+        reserved: array[0 .. 1, uint8]
+        version:  uint32
+
+    Cursor = object
+        ## Stream reading cursor
+        pCurrent*: ptr uint8
+        pBegin*:   ptr uint8
+        pEnd*:     ptr uint8
+
 const
     epkLong*:         ElementPropertyKind = 'L'.uint8
     epkInteger*:      ElementPropertyKind = 'I'.uint8
@@ -110,6 +132,98 @@ const
     epkArrayInteger*: ElementPropertyKind = 'i'.uint8
     epkArrayLong*:    ElementPropertyKind = 'l'.uint8
     epkArrayFloat*:   ElementPropertyKind = 'f'.uint8
+
+
+# >>> Math procedures #
+
+proc `*`(v: Vec3, f: float32): Vec3 = Vec3(x: v.x * f, y: v.y * f, z: v.z * f)
+    ## Multiply vector over scalar
+
+proc `+`(a: Vec3, b: Vec3): Vec3 = Vec3(x: a.x + b.x, y: a.y + b.y, z: a.z + b.z)
+    ## Add two vectors
+
+proc setTranslation(t: var Vec3, mtx: var Matrix) =
+    ## Set translation into transform matrix
+    mtx[12] = t.x
+    mtx[13] = t.y
+    mtx[14] = t.z
+
+proc `-`(v: Vec3): Vec3 = Vec3( x: -v.x, y: -v.y, z: -v.z )
+    ## Opposite vector
+
+proc `*`(lhs: Matrix, rhs: Matrix): Matrix =
+    ## Matrix multiplication
+    for j in 0 ..< 4:
+        for i in 0 ..< 4:
+            var tmp: float64 = 0.0
+            for k in 0 ..< 4:
+                tmp += lhs[i + k * 4] * rhs[k + j * 4]
+            result[i + j * 4] = tmp
+
+proc makeIdentity(): Matrix = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    ## Create identity matrix
+
+proc rotationX(angle: float64): Matrix =
+    ## Rotation around X axis as transformation matrix
+    result = makeIdentity()
+    let c: float64 = math.cos(angle)
+    let s: float64 = math.sin(angle)
+    
+    result[10] = c
+    result[5]  = c
+    result[9]  = -s
+    result[6]  = s
+
+proc rotationY(angle: float64): Matrix =
+    ## Rotation around Y axis as transformation matrix
+    result = makeIdentity()
+    let c: float64 = math.cos(angle)
+    let s: float64 = math.sin(angle)
+    
+    result[10] = c
+    result[0]  = c
+    result[8]  = s
+    result[2]  = -s
+
+proc rotationZ(angle: float64): Matrix =
+    ## Rotation around Z axis as transformation matrix
+    result = makeIdentity()
+    let c: float64 = math.cos(angle)
+    let s: float64 = math.sin(angle)
+    
+    result[5]  = c
+    result[0]  = c
+    result[4]  = -s
+    result[1]  = s
+
+proc getRorationMatrix(euler: Vec3, order: RotationOrder): Matrix =
+    ## Get rotation transformation matrix
+    const kToRad: float64 = 3.1415926535897932384626433832795028 / 180.0;
+    let rx: Matrix = rotationX(euler.x * kToRad)
+    let ry: Matrix = rotationY(euler.y * kToRad)
+    let rz: Matrix = rotationZ(euler.z * kToRad)
+
+    case order
+    of RotationOrder.SphericXYZ:
+        assert(false)
+    of RotationOrder.EulerXYZ:
+        return rz * ry * rx
+    of RotationOrder.EulerXZY:
+        return ry * rz * rx
+    of RotationOrder.EulerYXZ:
+        return rz * rx * ry
+    of RotationOrder.EulerYZX:
+        return rx * rz * ry
+    of RotationOrder.EulerZXY:
+        return ry * rx * rz
+    of RotationOrder.EulerZYX:
+        return rx * ry * rz
+
+proc fbxTimeToSeconds(value: int64): float64 = value.float64 / 46186158000.float64
+
+proc secondsToFbxTime(value: float64): int64 = (value * 46186158000.float64).int64
+
+# <<< Math procedures #
 
 proc parseArrayRaw[T](property: Property, maxSize: int): seq[T] =
     ## Parse raw array
