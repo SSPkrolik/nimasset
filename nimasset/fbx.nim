@@ -225,6 +225,83 @@ proc secondsToFbxTime(value: float64): int64 = (value * 46186158000.float64).int
 
 # <<< Math procedures #
 
+# >>> String procedures #
+
+proc copyString[size: static int](destination: array[0 .. (size - 1), char], source: ptr char): bool =
+    ## copies fixed-size string from source to destination
+    var src: ptr char = source
+    var dest: ptr char = destination
+    var length: int = size
+    
+    if (src.isNil()):
+        return false
+    
+    while src[] and length > 1:
+        dest[] = src[]
+        dec(length)
+        dest = cast[ptr char](cast[ByteAddress](dest) + 1)
+        src = cast[ptr char](cast[ByteAddress](src) + 1)
+    dest[] = 0
+    return src[] == '\0'
+
+# <<< String procedures #
+
+# >>> DataView procedures #
+
+proc toU64(view: DataView): uint64 =
+    ## Convert dataview data to unsigned 64-bit integer
+    if (view.binary):
+        assert(cast[ByteAddress](view.pEnd) - cast[ByteAddress](view.pBegin) == sizeof(uint64))
+        return cast[uint64](view.pBegin[])
+    return parseBiggestUInt($cast[cstring](view.pBegin))
+
+proc toI64(view: DataView): int64 =
+    ## Convert dataview data to signed 64-bit integer
+    if (view.binary):
+        assert(cast[ByteAddress](view.pEnd) - cast[ByteAddress](view.pBegin) == sizeof(int64))
+        return cast[int64](view.pBegin[])
+    return parseBiggestInt($cast[cstring](view.pBegin))
+
+proc toInt(view: DataView): int =
+    ## Convert dataview data to signed integer
+    if (view.binary):
+        assert(cast[ByteAddress](view.pEnd) - cast[ByteAddress](view.pBegin) == sizeof(int64))
+        return cast[int](view.pBegin[])
+    return parseInt($cast[cstring](view.pBegin))
+
+proc toU32(view: DataView): uint32 =
+    ## Convert dataview data to unsigned 32-bit integer
+    if (view.binary):
+        assert(cast[ByteAddress](view.pEnd) - cast[ByteAddress](view.pBegin) == sizeof(int64))
+        return cast[uint32](view.pBegin[])
+    return parseUInt($cast[cstring](view.pBegin)).uint32
+
+
+proc toFloat64(view: DataView): float64 =
+    ## Convert dataview data to 64-bit float
+    if (view.binary):
+        assert(cast[ByteAddress](view.pEnd) - cast[ByteAddress](view.pBegin) == sizeof(int64))
+        return cast[float64](view.pBegin[])
+    return parseFloat($cast[cstring](view.pBegin)).float64
+
+proc toFloat32(view: DataView): float32 =
+    ## Convert dataview data to unsigned 32-bit float
+    if (view.binary):
+        assert(cast[ByteAddress](view.pEnd) - cast[ByteAddress](view.pBegin) == sizeof(int64))
+        return cast[float32](view.pBegin[])
+    return parseUInt($cast[cstring](view.pBegin)).float32
+
+proc `==`(view: DataView, rhs: ptr char): bool =
+    ## Compare dataview with raw string data
+    var c:  ptr char = rhs
+    var c2: ptr char = cast[ptr char](view.pBegin)
+
+    while(c[] != '\0' and c2 != cast[ptr char](view.pEnd)):
+        if (c[] != c2[]):
+            return false
+        c  = cast[ptr char](cast[ByteAddress](c) + 1)
+        c2 = cast[ptr char](cast[ByteAddress](c2) + 1)
+
 proc parseArrayRaw[T](property: Property, maxSize: int): seq[T] =
     ## Parse raw array
     result = @[]
@@ -236,23 +313,6 @@ proc parseArrayRaw[T](property: Property, maxSize: int): seq[T] =
                             of epkArrayInteger: 4
                             else: 0
 
-proc toU64*(view: DataView): uint64 =
-    ##
-
-proc toI64*(view: DataView): int64 =
-    ##
-
-proc toInt*(view: DataView): int =
-    ##
-
-proc toU32*(view: DataView): int =
-    ##
-
-proc toFloat64*(view: DataView): float64 =
-    ##
-
-proc toFloat32*(view: DataView): float32 =
-    ##
 
 method kind*(property: Property): ElementPropertyKind {.base.} = property.m_kind
     ## Returns Element Property Type
