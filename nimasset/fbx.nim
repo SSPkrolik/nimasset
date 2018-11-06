@@ -3,6 +3,7 @@ import streams
 import pegs
 import times
 import strutils
+import zip / zlib
 
 type
     ErrBadFBX* = ref object of Exception
@@ -134,6 +135,27 @@ const
     epkArrayFloat*:   ElementPropertyKind = 'f'.uint8
 
 
+# >>> Decompression #
+
+proc decompress(pIn: ptr uint8, inSize: int, pOut: ptr uint8, outSize: int): bool =
+    ## Zip-stream decompression
+    var strm: ZStream = ZStream()
+    discard strm.inflateInit()
+
+    strm.availIn  = inSize.Uint
+    strm.nextIn   = cast[cstring](pIn)
+    strm.availOut = outSize.Uint
+    strm.nextOut  = cast[cstring](pOut)
+
+    let status: int32 = strm.inflate(Z_SYNC_FLUSH)
+
+    if status != Z_STREAM_END:
+        return false
+
+    return strm.inflateEnd() == Z_OK
+
+# <<< Decompression #
+
 # >>> Math procedures #
 
 proc `*`(v: Vec3, f: float32): Vec3 = Vec3(x: v.x * f, y: v.y * f, z: v.z * f)
@@ -196,7 +218,7 @@ proc rotationZ(angle: float64): Matrix =
     result[4]  = -s
     result[1]  = s
 
-proc getRorationMatrix(euler: Vec3, order: RotationOrder): Matrix =
+proc getRotationMatrix(euler: Vec3, order: RotationOrder): Matrix =
     ## Get rotation transformation matrix
     const kToRad: float64 = 3.1415926535897932384626433832795028 / 180.0;
     let rx: Matrix = rotationX(euler.x * kToRad)
@@ -302,33 +324,112 @@ proc `==`(view: DataView, rhs: ptr char): bool =
         c  = cast[ptr char](cast[ByteAddress](c) + 1)
         c2 = cast[ptr char](cast[ByteAddress](c2) + 1)
 
-proc parseArrayRaw[T](property: Property, maxSize: int): seq[T] =
+# <<< Property procedures #
+
+proc fromString[T](pStr: cstring, pEnd: cstring, val: ptr T): cstring =
+    ##
+    when T is int:
+        val[] = parseInt($pStr)
+    elif T is uint64:
+        val[] = parseBiggestUInt($pStr).uint64
+    elif T is int64:
+        val[] = parseBiggestInt($pStr).int64
+    elif T is float64:
+        val[] = parseFloat($pStr).float64
+    elif T is float32:
+        val[] = parseFloat($pStr).float32
+    elif T is Vec2:
+        return fromString(pStr, pEnd, addr val[].x, 2)
+    elif T is Vec3:
+        return fromString(pStr, pEnd, addr val[].y, 3)
+    elif T is Vec4:
+        return fromString(pStr, pEnd, addr val[].z, 4)
+    elif T is Matrix:
+        return fromString(pStr, pEnd, val, 16)
+
+    var iter: cstring = pStr
+    while cast[ByteAddress](iter) < cast[ByteAddress](pEnd) and cast[ptr char](iter)[] != ',':
+        iter = cast[cstring](cast[ByteAddress](iter) + 1)
+    
+    return iter
+
+proc fromString(pStr: cstring, pEnd: cstring, val: ptr float64, count: int): cstring =
+    ## Parse from string
+    var iter: cstring = pStr
+    var valIter: ptr float64 = val
+
+    for i in 0 ..< count:
+        valIter[] = parseFloat($iter)
+        valIter = cast[ptr float64](cast[ByteAddress](val) + sizeof(float64))
+        while cast[ByteAddress](iter) < cast[ByteAddress](pEnd) and cast[ptr char](iter)[] != ',':
+            iter = cast[cstring](cast[ByteAddress](iter) + 1)
+        if iter == pEnd:
+            return iter
+    
+    return iter
+
+proc getCount*(property: Property): int =
+    ## Get number of property data items
+    assert(property.m_kind in [epkArrayDouble, epkArrayInteger, epkArrayFloat, epkArrayLong])
+    if property.m_value.binary:
+        return (cast[ptr uint32](property.m_value.pBegin)[]).int
+    
+proc parseTextArrayRaw[T](property: Property, pOutRaw: ptr T, maxSize: int): bool =
+    ## Parse text array
+    var iter: ptr uint8 = property.m_value.pBegin
+    var pOut: ptr T = pOutRaw
+
+    while cast[ByteAddress](iter) < cast[ByteAddress](property.m_value.pEnd):
+        iter = cast[ptr uint8](fromString[T](cast[cstring](iter), cast[cstring](property.m_value.pEnd), pOut))
+        pOut = cast[ptr T](cast[ByteAddress](pOut) + 1)
+        if cast[ByteAddress](pOut) - cast[ByteAddress](pOutRaw) == (maxSize / sizeof(T)).int:
+            return true
+    
+    return cast[ByteAddress](pOut) - cast[ByteAddress](pOutRaw) == (maxSize / sizeof(T)).int
+    
+proc parseArrayRaw[T](property: Property, pOut: ptr T, maxSize: int): bool =
     ## Parse raw array
-    result = @[]
     if property.m_value.binary:
         let elemSize: int = case property.m_kind
                             of epkArrayLong:    8
                             of epkArrayDouble:  8
                             of epkArrayFloat:   4
                             of epkArrayInteger: 4
-                            else: 0
+                            else: 1
 
+        let pData: ptr uint8 = cast[ptr uint8](cast[ByteAddress](property.m_value.pBegin) + sizeof(uint32) * 3)
+        if (cast[ByteAddress](pData) > cast[ByteAddress](property.m_value.pEnd)):
+            return false
+        
+        let count: uint32 = property.getCount().uint32
+        let enc: uint32 = cast[ptr uint32](cast[ByteAddress](property.m_value.pBegin) + 4)[]
+        let len: uint32 = cast[ptr uint32](cast[ByteAddress](property.m_value.pBegin) + 8)[]
 
-method kind*(property: Property): ElementPropertyKind {.base.} = property.m_kind
-    ## Returns Element Property Type
+        if enc == 0:
+            if (len.int > maxSize): return false
+            if (cast[ByteAddress](pData) + len.ByteAddress > cast[ByteAddress](property.m_value.pEnd)): return false
+            copyMem(pOut, pData, len)
+            return true
+        elif enc == 1:
+            if (elemSize * count.int > maxSize): return false
+            return decompress(pData, len.int, cast[ptr uint8](pOut), elem_size * count.int)
 
-method next*(property: Property): Property {.base.} = property.m_next
-    ## Returns element's next property
+        return false
+    
+    return parseTextArrayRaw(property, pOut, maxSize)
 
-method value*(property: Property): DataView {.base.} = property.m_value
-    ## Get value of element property
+proc getType*(property: Property): ElementPropertyKind = property.m_kind
+    ## Return property type
 
-method count*(property: Property): int {.base.} =
-    ## Get number of pieces in element's property
-    assert property.m_kind in [epkArrayDouble, epkArrayInteger, epkArrayFloat, epkArrayLong]
-    if property.m_value.binary:
-        return int(cast[ptr uint32](property.m_value.pBegin)[])
-    return property.m_count
+proc getNext*(property: Property): Property = property.m_next
+    ## Get next element property in list
+
+proc getValue*(property: Property): DataView = property.m_value
+    ## Get property value
+
+proc getValues*[T:float64|float32|uint64|int64|int](property: Property, values: ptr T, maxSize: int): bool = parseArrayRaw(property, values, maxSize)
+
+# <<< Property procedures #
 
 proc newObject*(scene: Scene, element: Element): Object =
     ## Constructs new FBX Object linked to scene and element
