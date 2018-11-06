@@ -79,6 +79,10 @@ type
 
     Element* = ref object
         ## Element of FBX Scene
+        m_id:            DataView
+        m_child:         Element
+        m_sibling:       Element
+        m_firstProperty: Property
 
     ObjectKind* {.pure.} = enum
         ## Type of FBX Object
@@ -430,6 +434,24 @@ proc getValue*(property: Property): DataView = property.m_value
 proc getValues*[T:float64|float32|uint64|int64|int](property: Property, values: ptr T, maxSize: int): bool = parseArrayRaw(property, values, maxSize)
 
 # <<< Property procedures #
+
+# >>> Element procedures #
+
+proc getFirstChild*(element: Element): Element = element.m_child
+proc getSibling*(element: Element): Element = element.m_sibling
+proc GetId*(element: Element): DataView = element.m_id
+proc getFirstProperty*(element: Element): Property = element.m_firstProperty
+
+proc getProperty*(element: Element, idx: int): Property =
+    ## Get property at index 'idx' in a list of element properties
+    var prop: Property = element.m_firstProperty
+    for i in 0 ..< idx:
+        if prop.isNil():
+            return nil
+        prop = prop.getNext()
+    return prop
+
+# <<< Element procedures #
 
 proc newObject*(scene: Scene, element: Element): Object =
     ## Constructs new FBX Object linked to scene and element
