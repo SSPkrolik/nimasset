@@ -67,12 +67,12 @@ type
     FBXLoader* = ref object
         ## Loads Autodesk FBX (*.fbx) format for 3D assets
 
-    ElementPropertyKind* = uint8
+    PropertyKind* = uint8
         ## Data type of FBX Element Property
 
     Property* = ref object
         ## FBX Element Property
-        m_kind:  ElementPropertyKind
+        m_kind:  PropertyKind
         m_count: int
         m_value: DataView
         m_next:  Property
@@ -124,15 +124,15 @@ type
         pEnd*:     ptr uint8
 
 const
-    epkLong*:         ElementPropertyKind = 'L'.uint8
-    epkInteger*:      ElementPropertyKind = 'I'.uint8
-    epkString*:       ElementPropertyKind = 'S'.uint8
-    epkFloat*:        ElementPropertyKind = 'F'.uint8
-    epkDouble*:       ElementPropertyKind = 'D'.uint8
-    epkArrayDouble*:  ElementPropertyKind = 'd'.uint8
-    epkArrayInteger*: ElementPropertyKind = 'i'.uint8
-    epkArrayLong*:    ElementPropertyKind = 'l'.uint8
-    epkArrayFloat*:   ElementPropertyKind = 'f'.uint8
+    pkLong*:         PropertyKind = 'L'.uint8
+    pkInteger*:      PropertyKind = 'I'.uint8
+    pkString*:       PropertyKind = 'S'.uint8
+    pkFloat*:        PropertyKind = 'F'.uint8
+    pkDouble*:       PropertyKind = 'D'.uint8
+    pkArrayDouble*:  PropertyKind = 'd'.uint8
+    pkArrayInteger*: PropertyKind = 'i'.uint8
+    pkArrayLong*:    PropertyKind = 'l'.uint8
+    pkArrayFloat*:   PropertyKind = 'f'.uint8
 
 
 # >>> Decompression #
@@ -370,7 +370,7 @@ proc fromString(pStr: cstring, pEnd: cstring, val: ptr float64, count: int): cst
 
 proc getCount*(property: Property): int =
     ## Get number of property data items
-    assert(property.m_kind in [epkArrayDouble, epkArrayInteger, epkArrayFloat, epkArrayLong])
+    assert(property.m_kind in [pkArrayDouble, pkArrayInteger, pkArrayFloat, pkArrayLong])
     if property.m_value.binary:
         return (cast[ptr uint32](property.m_value.pBegin)[]).int
     
@@ -391,10 +391,10 @@ proc parseArrayRaw[T](property: Property, pOut: ptr T, maxSize: int): bool =
     ## Parse raw array
     if property.m_value.binary:
         let elemSize: int = case property.m_kind
-                            of epkArrayLong:    8
-                            of epkArrayDouble:  8
-                            of epkArrayFloat:   4
-                            of epkArrayInteger: 4
+                            of pkArrayLong:    8
+                            of pkArrayDouble:  8
+                            of pkArrayFloat:   4
+                            of pkArrayInteger: 4
                             else: 1
 
         let pData: ptr uint8 = cast[ptr uint8](cast[ByteAddress](property.m_value.pBegin) + sizeof(uint32) * 3)
@@ -418,7 +418,7 @@ proc parseArrayRaw[T](property: Property, pOut: ptr T, maxSize: int): bool =
     
     return parseTextArrayRaw(property, pOut, maxSize)
 
-proc getType*(property: Property): ElementPropertyKind = property.m_kind
+proc getType*(property: Property): PropertyKind = property.m_kind
     ## Return property type
 
 proc getNext*(property: Property): Property = property.m_next
