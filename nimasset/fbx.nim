@@ -439,7 +439,7 @@ proc getValues*[T:float64|float32|uint64|int64|int](property: Property, values: 
 
 proc getFirstChild*(element: Element): Element = element.m_child
 proc getSibling*(element: Element): Element = element.m_sibling
-proc GetId*(element: Element): DataView = element.m_id
+proc getId*(element: Element): DataView = element.m_id
 proc getFirstProperty*(element: Element): Property = element.m_firstProperty
 
 proc getProperty*(element: Element, idx: int): Property =
@@ -450,6 +450,14 @@ proc getProperty*(element: Element, idx: int): Property =
             return nil
         prop = prop.getNext()
     return prop
+
+proc findChild*(element: Element, id: cstring): Element =
+    ## find child by id
+    var iter: Element = element.m_child
+    while not iter.isNil():
+        if cast[cstring](iter.m_id.pBegin) == id:
+            return iter
+        iter = iter.m_sibling
 
 # <<< Element procedures #
 
