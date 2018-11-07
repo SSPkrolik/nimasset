@@ -103,9 +103,12 @@ type
 
     Object* = ref object of RootObj
         ## FBX Object Base
-        m_kind:   ObjectKind
-        m_isNode: bool
-        m_scene:  Scene
+        m_id:            uint64
+        m_name:          array[0 .. 127, char]
+        m_element:       Element
+        m_nodeAttribute: Object
+        m_isNode:        bool
+        m_scene:         Scene
 
     Root* = ref object of Object
         ## FBX Scene Root Object
@@ -317,6 +320,16 @@ proc toFloat32(view: DataView): float32 =
         return cast[float32](view.pBegin[])
     return parseUInt($cast[cstring](view.pBegin)).float32
 
+proc toString[N: static int](view: DataView, pOut: ptr array[0 .. N-1, char]) =
+    ## Convert dataview data to string
+    var cout: ptr char
+    var cin: ptr uint8
+    while cin != view.pEnd and cast[ByteAddress](cout) - cast[ByteAddress](pOut) < N - 1:
+        cout[] = cin[].char
+        cin = cast[ptr uint8](cast[ByteAddress](cin) + 1)
+        cout = cast[ptr char](cast[ByteAddress](cout) + 1)
+    cout[] = '\0'
+
 proc `==`(view: DataView, rhs: ptr char): bool =
     ## Compare dataview with raw string data
     var c:  ptr char = rhs
@@ -461,14 +474,60 @@ proc findChild*(element: Element, id: cstring): Element =
 
 # <<< Element procedures #
 
+# >>> Object procedures #
+
 proc newObject*(scene: Scene, element: Element): Object =
     ## Constructs new FBX Object linked to scene and element
-    new(result)
+    result.new()
     result.m_scene = scene
+    result.m_element = element
+    result.m_isNode = false
+    result.m_nodeAttribute = nil
+
+    let e: Element = element
+    if not e.m_firstProperty.isNil() and not e.m_firstProperty.m_next.isNil():
+        e.m_firstProperty.m_next.m_value.toString(addr result.m_name)
 
 method kind*(obj: Object): ObjectKind {.base.} = 
     ## Get FBXObject type
     raise newException(Exception, "Method not implemented")
+
+proc resolveProperty(obj: Object, name: cstring): Element =
+    let props: Element = findChild(obj.m_element, "Properties70")
+    if (props.isNil()):
+        return nil
+    
+    var prop: Element = props.m_child
+    while not prop.isNil():
+        if not prop.m_firstProperty.isNil():
+            if cast[cstring](prop.m_firstProperty.m_value.pBegin) == name:
+                return prop
+        prop = prop.m_sibling
+    
+    return nil
+
+proc resolveEnumProperty(obj: Object, name: cstring, defaultValue: int): int =
+    let element: Element = resolveProperty(obj, name)
+    if element.isNil():
+        return defaultValue
+    let x: Property = element.getProperty(4)
+    if x.isNil():
+        return defaultValue
+    
+    return x.m_value.toInt()
+
+proc resolveVec3Property(obj: Object, name: cstring, defaultValue: Vec3): Vec3 =
+    let element: Element = resolveProperty(obj, name)
+    if element.isNil():
+        return defaultValue
+    let x: Property = element.getProperty(4)
+    if x.isNil() or x.m_next.isNil() or x.m_next.m_next.isNil():
+        return defaultValue
+    
+    return Vec3(x: x.m_value.toFloat64(), y: x.m_next.m_value.toFloat64(), z: x.m_next.m_next.m_value.toFloat64())
+
+# <<< Object procedures #
+
 
 proc rootElement*(scene: Scene): Element = scene.m_root_element
     ## Get FBX Scene root element
