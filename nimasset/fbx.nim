@@ -1,8 +1,9 @@
 import math
-import streams
+import options
 import pegs
-import times
+import streams
 import strutils
+import times
 import zip / zlib
 
 type
@@ -268,8 +269,8 @@ proc copyString[size: static int](destination: array[0 .. (size - 1), char], sou
     while src[] and length > 1:
         dest[] = src[]
         dec(length)
-        dest = cast[ptr char](cast[ByteAddress](dest) + 1)
-        src = cast[ptr char](cast[ByteAddress](src) + 1)
+        dest = cast[ptr char](cast[ByteAddress](dest) +% 1)
+        src = cast[ptr char](cast[ByteAddress](src) +% 1)
     dest[] = 0
     return src[] == '\0'
 
@@ -280,28 +281,28 @@ proc copyString[size: static int](destination: array[0 .. (size - 1), char], sou
 proc toU64(view: DataView): uint64 =
     ## Convert dataview data to unsigned 64-bit integer
     if (view.binary):
-        assert(cast[ByteAddress](view.pEnd) - cast[ByteAddress](view.pBegin) == sizeof(uint64))
+        assert(cast[ByteAddress](view.pEnd) -% cast[ByteAddress](view.pBegin) == sizeof(uint64))
         return cast[uint64](view.pBegin[])
     return parseBiggestUInt($cast[cstring](view.pBegin))
 
 proc toI64(view: DataView): int64 =
     ## Convert dataview data to signed 64-bit integer
     if (view.binary):
-        assert(cast[ByteAddress](view.pEnd) - cast[ByteAddress](view.pBegin) == sizeof(int64))
+        assert(cast[ByteAddress](view.pEnd) -% cast[ByteAddress](view.pBegin) == sizeof(int64))
         return cast[int64](view.pBegin[])
     return parseBiggestInt($cast[cstring](view.pBegin))
 
 proc toInt(view: DataView): int =
     ## Convert dataview data to signed integer
     if (view.binary):
-        assert(cast[ByteAddress](view.pEnd) - cast[ByteAddress](view.pBegin) == sizeof(int64))
+        assert(cast[ByteAddress](view.pEnd) -% cast[ByteAddress](view.pBegin) == sizeof(int64))
         return cast[int](view.pBegin[])
     return parseInt($cast[cstring](view.pBegin))
 
 proc toU32(view: DataView): uint32 =
     ## Convert dataview data to unsigned 32-bit integer
     if (view.binary):
-        assert(cast[ByteAddress](view.pEnd) - cast[ByteAddress](view.pBegin) == sizeof(int64))
+        assert(cast[ByteAddress](view.pEnd) -% cast[ByteAddress](view.pBegin) == sizeof(int64))
         return cast[uint32](view.pBegin[])
     return parseUInt($cast[cstring](view.pBegin)).uint32
 
@@ -309,14 +310,14 @@ proc toU32(view: DataView): uint32 =
 proc toFloat64(view: DataView): float64 =
     ## Convert dataview data to 64-bit float
     if (view.binary):
-        assert(cast[ByteAddress](view.pEnd) - cast[ByteAddress](view.pBegin) == sizeof(int64))
+        assert(cast[ByteAddress](view.pEnd) -% cast[ByteAddress](view.pBegin) == sizeof(int64))
         return cast[float64](view.pBegin[])
     return parseFloat($cast[cstring](view.pBegin)).float64
 
 proc toFloat32(view: DataView): float32 =
     ## Convert dataview data to unsigned 32-bit float
     if (view.binary):
-        assert(cast[ByteAddress](view.pEnd) - cast[ByteAddress](view.pBegin) == sizeof(int64))
+        assert(cast[ByteAddress](view.pEnd) -% cast[ByteAddress](view.pBegin) == sizeof(int64))
         return cast[float32](view.pBegin[])
     return parseUInt($cast[cstring](view.pBegin)).float32
 
@@ -324,10 +325,10 @@ proc toString[N: static int](view: DataView, pOut: ptr array[0 .. N-1, char]) =
     ## Convert dataview data to string
     var cout: ptr char
     var cin: ptr uint8
-    while cin != view.pEnd and cast[ByteAddress](cout) - cast[ByteAddress](pOut) < N - 1:
+    while cin != view.pEnd and cast[ByteAddress](cout) -% cast[ByteAddress](pOut) < N - 1:
         cout[] = cin[].char
-        cin = cast[ptr uint8](cast[ByteAddress](cin) + 1)
-        cout = cast[ptr char](cast[ByteAddress](cout) + 1)
+        cin = cast[ptr uint8](cast[ByteAddress](cin) +% 1)
+        cout = cast[ptr char](cast[ByteAddress](cout) +% 1)
     cout[] = '\0'
 
 proc `==`(view: DataView, rhs: ptr char): bool =
@@ -338,8 +339,8 @@ proc `==`(view: DataView, rhs: ptr char): bool =
     while(c[] != '\0' and c2 != cast[ptr char](view.pEnd)):
         if (c[] != c2[]):
             return false
-        c  = cast[ptr char](cast[ByteAddress](c) + 1)
-        c2 = cast[ptr char](cast[ByteAddress](c2) + 1)
+        c  = cast[ptr char](cast[ByteAddress](c) +% 1)
+        c2 = cast[ptr char](cast[ByteAddress](c2) +% 1)
 
 # <<< Property procedures #
 
@@ -365,8 +366,8 @@ proc fromString[T](pStr: cstring, pEnd: cstring, val: ptr T): cstring =
         return fromString(pStr, pEnd, val, 16)
 
     var iter: cstring = pStr
-    while cast[ByteAddress](iter) < cast[ByteAddress](pEnd) and cast[ptr char](iter)[] != ',':
-        iter = cast[cstring](cast[ByteAddress](iter) + 1)
+    while cast[ByteAddress](iter) <% cast[ByteAddress](pEnd) and cast[ptr char](iter)[] != ',':
+        iter = cast[cstring](cast[ByteAddress](iter) +% 1)
     
     return iter
 
@@ -377,9 +378,9 @@ proc fromString(pStr: cstring, pEnd: cstring, val: ptr float64, count: int): cst
 
     for i in 0 ..< count:
         valIter[] = parseFloat($iter)
-        valIter = cast[ptr float64](cast[ByteAddress](val) + sizeof(float64))
-        while cast[ByteAddress](iter) < cast[ByteAddress](pEnd) and cast[ptr char](iter)[] != ',':
-            iter = cast[cstring](cast[ByteAddress](iter) + 1)
+        valIter = cast[ptr float64](cast[ByteAddress](val) +% sizeof(float64))
+        while cast[ByteAddress](iter) <% cast[ByteAddress](pEnd) and cast[ptr char](iter)[] != ',':
+            iter = cast[cstring](cast[ByteAddress](iter) +% 1)
         if iter == pEnd:
             return iter
     
@@ -396,13 +397,13 @@ proc parseTextArrayRaw[T](property: Property, pOutRaw: ptr T, maxSize: int): boo
     var iter: ptr uint8 = property.m_value.pBegin
     var pOut: ptr T = pOutRaw
 
-    while cast[ByteAddress](iter) < cast[ByteAddress](property.m_value.pEnd):
+    while cast[ByteAddress](iter) <% cast[ByteAddress](property.m_value.pEnd):
         iter = cast[ptr uint8](fromString[T](cast[cstring](iter), cast[cstring](property.m_value.pEnd), pOut))
-        pOut = cast[ptr T](cast[ByteAddress](pOut) + 1)
-        if cast[ByteAddress](pOut) - cast[ByteAddress](pOutRaw) == (maxSize / sizeof(T)).int:
+        pOut = cast[ptr T](cast[ByteAddress](pOut) +% 1)
+        if cast[ByteAddress](pOut) -% cast[ByteAddress](pOutRaw) == (maxSize / sizeof(T)).int:
             return true
     
-    return cast[ByteAddress](pOut) - cast[ByteAddress](pOutRaw) == (maxSize / sizeof(T)).int
+    return cast[ByteAddress](pOut) -% cast[ByteAddress](pOutRaw) == (maxSize / sizeof(T)).int
     
 proc parseArrayRaw[T](property: Property, pOut: ptr T, maxSize: int): bool =
     ## Parse raw array
@@ -415,7 +416,7 @@ proc parseArrayRaw[T](property: Property, pOut: ptr T, maxSize: int): bool =
                             else: 1
 
         let pData: ptr uint8 = cast[ptr uint8](cast[ByteAddress](property.m_value.pBegin) + sizeof(uint32) * 3)
-        if (cast[ByteAddress](pData) > cast[ByteAddress](property.m_value.pEnd)):
+        if (cast[ByteAddress](pData) >% cast[ByteAddress](property.m_value.pEnd)):
             return false
         
         let count: uint32 = property.getCount().uint32
@@ -424,7 +425,7 @@ proc parseArrayRaw[T](property: Property, pOut: ptr T, maxSize: int): bool =
 
         if enc == 0:
             if (len.int > maxSize): return false
-            if (cast[ByteAddress](pData) + len.ByteAddress > cast[ByteAddress](property.m_value.pEnd)): return false
+            if (cast[ByteAddress](pData) +% len.ByteAddress >% cast[ByteAddress](property.m_value.pEnd)): return false
             copyMem(pOut, pData, len)
             return true
         elif enc == 1:
@@ -528,6 +529,26 @@ proc resolveVec3Property(obj: Object, name: cstring, defaultValue: Vec3): Vec3 =
 
 # <<< Object procedures #
 
+# >>> Cursor procedures #
+
+proc read[T](cursor: var Cursor): Option[T] =
+    ## Read data at cursor
+    if cast[ByteAddress](cursor.pCurrent) +% sizeof(T) >% cast[ByteAddress](cursor.pEnd):
+        # `Reading past the end`
+        return none(T)
+    cursor.pCurrent = cast[ptr uint8](cast[ByteAddress](cursor.pCurrent) +% sizeof(T))
+    return some(cast[ptr T](cursor.pCurrent)[])
+
+proc readShortString(cursor: var Cursor): Option[DataView] =
+    ## Read short string
+    var value: DataView
+    let length: Option[uint8] = read[uint8](cursor)
+    if length.isNone():
+        return none(DataView)
+    
+    # if cast[ByteAddress](cursor.pCurrent) + length
+
+# <<< Cursor procedures #
 
 proc rootElement*(scene: Scene): Element = scene.m_root_element
     ## Get FBX Scene root element
