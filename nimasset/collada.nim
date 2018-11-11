@@ -936,7 +936,6 @@ proc parseControllers(x: var XmlParser, cs: var ColladaScene) =
         of xmlElementOpen:
             case x.elementName:
             of csController:
-                if cs.skinControllers.isNil: cs.skinControllers = @[]
                 cs.skinControllers.add(parseSkinController(x, cs))
             else:
                 discard
@@ -1033,7 +1032,7 @@ proc boneAndWeightForVertex*(sc: ColladaSkinController, vertexIndex, boneIndex: 
         elif s.kind == SourceKind.Name:
             let infl = sc.influences[(vertexIndex * sc.weightsPerVertex + boneIndex) * 2 + 0]
             if infl == -1:
-                result.bone = nil
+                result.bone = ""
             else:
                 result.bone = s.dataName[sc.influences[(vertexIndex * sc.weightsPerVertex + boneIndex) * 2 + 0]]
 
@@ -1049,7 +1048,7 @@ proc boneInvMatrix*(sc: ColladaSkinController, boneName: string): seq[float32] =
                     index = i
 
     if index == -1:
-        return nil
+        return @[]
 
     for s in sc.sources:
         if s.id.endsWith("-Matrices"):
