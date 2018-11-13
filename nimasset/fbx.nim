@@ -12,12 +12,12 @@ const
     ptString*:       PropertyType = 'S'.uint8  ## string property
     ptFloat*:        PropertyType = 'F'.uint8  ## float32 property
     ptDouble*:       PropertyType = 'D'.uint8  ## float64 property
-    prArrayBool*:    PropertyType = 'b'.uint8  ## bool array property
+    ptRawBinary*:    PropertyType = 'R'.uint8  ## Binary (untyped)? data
+    ptArrayBool*:    PropertyType = 'b'.uint8  ## bool array property
     ptArrayDouble*:  PropertyType = 'd'.uint8  ## float64 array property
     ptArrayInteger*: PropertyType = 'i'.uint8  ## int32 array property
     ptArrayLong*:    PropertyType = 'l'.uint8  ## int64 array property
     ptArrayFloat*:   PropertyType = 'f'.uint8  ## float32 array property
-    ptBinary*:       PropertyType = 'R'.uint8  ## Binary (untyped)? data
 
 type
     Header {.packed.} = object
@@ -33,26 +33,23 @@ type
 
     Property* = ref object
         ## FBX Node Property
-        case m_kind: PropertyType
-        of ptChar:
-            m_valueChar: char
-        of ptShort:
-            m_valueInt16: int16
-        of ptLong:
-            m_valueInt64: int64
-        of ptInteger:
-            m_valueInt32: int32
-        of ptString:
-            m_valueString: string
-        of ptFloat:
-            m_valueFloat32: float32
-        of ptDouble:
-            m_valueFloat64: float64
-        of ptBinary:
-            m_valueBinary: pointer
-        else:
-            discard
-        m_arraySize: int
+        case kind*: PropertyType
+        of ptChar:         valueChar*:         char
+        of ptShort:        valueInt16*:        int16
+        of ptLong:         valueInt64*:        int64
+        of ptInteger:      valueInt32*:        int32
+        of ptString:       valueString*:       string
+        of ptFloat:        valueFloat32*:      float32
+        of ptDouble:       valueFloat64*:      float64
+        of ptRawBinary:    valueBinary*:       seq[char]
+        of ptArrayBool:    valueArrayBool*:    seq[bool]
+        of ptArrayDouble:  valueArrayFloat64*: seq[float64]
+        of ptArrayInteger: valueArrayInt32*:   seq[int32]
+        of ptArrayLong:    valueArrayInt64*:   seq[int64]
+        of ptArrayFloat:   valueArrayFloat*:   seq[float32]
+        else: discard
+
+        arrayLength: int
 
     Node* = ref object
         ## FBX Scene tree node
@@ -77,35 +74,28 @@ type
 
 converter scalarToProperty[T: char | int16 | int32 | int64 | float32 | float64 | string](value: T): Property =
     result.new()
-    result.m_arraySize = 1
+    result.arrayLength = 1
     when T is char:
-        result.m_kind = ptChar
-        result.m_valueChar = value
+        result.kind = ptChar
+        result.valueChar = value
     elif T is int16:
-        result.m_kind = ptShort
-        result.m_valueInt16 = value
+        result.kind = ptShort
+        result.valueInt16 = value
     elif T is int32:
-        result.m_kind = ptInteger
-        result.m_valueInt32 = value
+        result.kind = ptInteger
+        result.valueInt32 = value
     elif T is int64:
-        result.m_kind = ptLong
-        result.m_valueInt64 = value
+        result.kind = ptLong
+        result.valueInt64 = value
     elif T is float32:
-        result.m_kind = ptFloat
-        result.m_valueFloat32 = value
+        result.kind = ptFloat
+        result.valueFloat32 = value
     elif T is float64:
-        result.m_kind = ptDouble
-        result.m_valueFloat64 = value
+        result.kind = ptDouble
+        result.valueFloat64 = value
     elif T is string:
-        result.m_kind = ptString
-        result.m_valueString = value
-
-proc numElements*(p: Property): int = p.m_arraySize
-    ## Return number of elements if property is an array.
-    ## For scalar properties numElements equals to 1.
-
-proc kind*(p: Property): PropertyType = p.m_kind
-    ## Return property data type
+        result.kind = ptString
+        result.valueString = value
 
 # <<< Property API <<< #
 
@@ -149,19 +139,24 @@ proc readPropertyBinary(scene: Scene, s: Stream): Property =
     of 'S': return readLongString(s)
     of 'F': return s.readFloat32()
     of 'D': return s.readFloat64()
+    #[
     of 'R':
-        let bufSize: uint32 = s.readUint32()
+        let bufSize: int = s.readUint32().int
         result.new()
-        result.m_kind = ptBinary
-        result.
-        s.readData()
+        result.kind = ptRawBinary
+        result.valueBinary = newSeq[char](bufSize)
+        assert s.readData(addr(result.valueBinary[0]), bufSize) == bufSize
     of 'b':
-            
+        let
+            arrayLength: int = s.readUint32().int
+            arrayEncoding: int = s.readUint32().int
+            arraySize: int = s.readUint32().int
+        
     of 'd':
     of 'i':
     of 'l':
     of 'f':
-
+    ]#
     else:
         assert(false, "Wrong property data type read from FBX file")
 
