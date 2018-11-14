@@ -1,5 +1,8 @@
+## FBX Importer
 import streams
 import strutils
+
+import zip / zlib
 
 type PropertyType* = uint8
     ## Data type of FBX Element Property
@@ -30,6 +33,10 @@ type
         ## FBX File Format
         Ascii
         Binary
+
+    Encoding* {.pure.} = enum
+        Uncompressed = (0.uint32, "Not Compressed")
+        Compressed   = (1.uint32, "ZIP (deflate) Compressed")
 
     Property* = ref object
         ## FBX Node Property
@@ -99,6 +106,10 @@ converter scalarToProperty[T: char | int16 | int32 | int64 | float32 | float64 |
 
 # <<< Property API <<< #
 
+proc newProperty(kind: PropertyType): Property =
+    result.new()
+    result.kind = kind
+
 # >>> Node API >>> #
 
 proc newNode(): Node =
@@ -139,24 +150,41 @@ proc readPropertyBinary(scene: Scene, s: Stream): Property =
     of 'S': return readLongString(s)
     of 'F': return s.readFloat32()
     of 'D': return s.readFloat64()
-    #[
     of 'R':
         let bufSize: int = s.readUint32().int
-        result.new()
+        let newProperty = newProperty()
         result.kind = ptRawBinary
         result.valueBinary = newSeq[char](bufSize)
         assert s.readData(addr(result.valueBinary[0]), bufSize) == bufSize
-    of 'b':
+    else:
         let
-            arrayLength: int = s.readUint32().int
-            arrayEncoding: int = s.readUint32().int
-            arraySize: int = s.readUint32().int
-        
+            uncompressedLength: int = s.readUint32().int
+            arrayEncoding: uint32 = s.readUint32()
+            compressedLength: int = s.readUint32().int
+        if Encoding(arrayEncoding) == Encoding.Compressed:
+            var compressed: seq[char] = @[]
+            compressed.setLen(compressedLength)
+            assert s.readData(addr compressed[0], compressedLength) == compressedLength
+            let uncomressed = zlib.uncompress(cast[cstring](addr compressed[0]), compressedLength)
+
+            let property = newProperty(ptArrayBool)
+            property.valueArrayBool = @[]
+            for c in uncomressed:
+                property.valueArrayBool.add(if c.uint8 == 1: true else: false)
+        else:
+            var uncompressed: seq[char] = @[]
+            uncompressed.setLen(uncompressedLength)
+            assert s.readData(addr uncompressed[0], uncompressedLength) == uncompressedLength
+
+            let property = newProperty(ptArrayBool)
+            property.valueArrayBool = @[]
+            for c in uncompressed:
+                property.valueArrayBool.add(if c.uint8 == 1: true else: false)
     of 'd':
+    of 'b':
     of 'i':
     of 'l':
     of 'f':
-    ]#
     else:
         assert(false, "Wrong property data type read from FBX file")
 
