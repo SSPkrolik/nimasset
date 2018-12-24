@@ -142,6 +142,8 @@ proc readLongString(s: Stream): string =
 proc readPropertyBinary(scene: Scene, s: Stream): Property =
     # Parse node property
     let pt: PropertyType = s.readUint8()
+    
+    # Parse scalar node properties
     case pt.char
     of 'C': return s.readChar()
     of 'Y': return s.readInt16()
@@ -150,43 +152,73 @@ proc readPropertyBinary(scene: Scene, s: Stream): Property =
     of 'S': return readLongString(s)
     of 'F': return s.readFloat32()
     of 'D': return s.readFloat64()
-    of 'R':
+    else:
+        discard
+    
+    # Parse raw node property
+    if char(pt) == 'R': 
         let bufSize: int = s.readUint32().int
-        let newProperty = newProperty()
-        result.kind = ptRawBinary
-        result.valueBinary = newSeq[char](bufSize)
+        let newProperty = newProperty(ptRawBinary)
+        newProperty.valueBinary = newSeq[char](bufSize)
         assert s.readData(addr(result.valueBinary[0]), bufSize) == bufSize
-    else:
-        let
-            uncompressedLength: int = s.readUint32().int
-            arrayEncoding: uint32 = s.readUint32()
-            compressedLength: int = s.readUint32().int
-        if Encoding(arrayEncoding) == Encoding.Compressed:
-            var compressed: seq[char] = @[]
-            compressed.setLen(compressedLength)
-            assert s.readData(addr compressed[0], compressedLength) == compressedLength
-            let uncomressed = zlib.uncompress(cast[cstring](addr compressed[0]), compressedLength)
+        return newProperty
 
-            let property = newProperty(ptArrayBool)
-            property.valueArrayBool = @[]
-            for c in uncomressed:
-                property.valueArrayBool.add(if c.uint8 == 1: true else: false)
-        else:
-            var uncompressed: seq[char] = @[]
-            uncompressed.setLen(uncompressedLength)
-            assert s.readData(addr uncompressed[0], uncompressedLength) == uncompressedLength
+    # Parse array node property
+    let
+        uncompressedLength: int = s.readUint32().int
+        arrayEncoding: uint32 = s.readUint32()
+        compressedLength: int = s.readUint32().int
 
-            let property = newProperty(ptArrayBool)
-            property.valueArrayBool = @[]
+    if Encoding(arrayEncoding) == Encoding.Compressed:
+        # Parse compressed array node property
+        var compressed: seq[char] = @[]
+        compressed.setLen(compressedLength)
+        assert s.readData(addr compressed[0], compressedLength) == compressedLength
+        let uncompressed = zlib.uncompress(cast[cstring](addr compressed[0]), compressedLength)
+
+        case pt.char
+        of 'd':
+            discard # TODO
+        of 'b':
+            let newProperty = newProperty(ptArrayBool)
+            newProperty.valueArrayBool = @[]
             for c in uncompressed:
-                property.valueArrayBool.add(if c.uint8 == 1: true else: false)
-    of 'd':
-    of 'b':
-    of 'i':
-    of 'l':
-    of 'f':
+                newProperty.valueArrayBool.add(if c.uint8 == 1: true else: false)
+            return newProperty
+        of 'i':
+            discard # TODO
+        of 'l':
+            discard # TODO
+        of 'f':
+            discard # TODO
+        else:
+            discard # TODO
     else:
-        assert(false, "Wrong property data type read from FBX file")
+        # Parse uncompressed array node property
+        var uncompressed: seq[char] = @[]
+        uncompressed.setLen(uncompressedLength)
+        assert s.readData(addr uncompressed[0], uncompressedLength) == uncompressedLength
+
+        case pt.char
+        of 'd':
+            discard # TODO
+        of 'b':
+            let newProperty = newProperty(ptArrayBool)
+            newProperty.valueArrayBool = @[]
+            for c in uncompressed:
+                newProperty.valueArrayBool.add(if c.uint8 == 1: true else: false)
+            return newProperty
+        of 'i':
+            discard # TODO
+        of 'l':
+            discard # TODO
+        of 'f':
+            discard # TODO
+        else:
+            discard # TODO
+
+    # Unknown node property type was encountered
+    assert(false, "Wrong property data type read from FBX file: " & $pt)
 
 proc readNodeBinary(scene: Scene, s: Stream): Node =
     # Parse node encoded in binary FBX
