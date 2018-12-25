@@ -129,6 +129,13 @@ proc readNodeOffset(scene: Scene, s: Stream): uint64 =
     
     return s.readUint32().uint64
 
+proc nodeEndOffset(scene: Scene): int =
+    # Get node nested list end offset depending on FBX version
+    if scene.m_header.version >= 7500'u32:
+        return 25
+    
+    return 13
+
 proc readShortString(s: Stream): string =
     # Read short string
     let length = s.readUint8()
@@ -143,6 +150,8 @@ proc readPropertyBinary(scene: Scene, s: Stream): Property =
     # Parse node property
     let pt: PropertyType = s.readUint8()
     
+    when not defined(release): echo "Property type: " & pt.char
+
     # Parse scalar node properties
     case pt.char
     of 'C': return s.readChar()
@@ -220,22 +229,48 @@ proc readPropertyBinary(scene: Scene, s: Stream): Property =
     # Unknown node property type was encountered
     assert(false, "Wrong property data type read from FBX file: " & $pt)
 
-proc readNodeBinary(scene: Scene, s: Stream): Node =
+proc readNodeBinary(scene: Scene, s: Stream, parent: Node) =
     # Parse node encoded in binary FBX
+    when not defined(release):
+        var parserRecursiveLevel {.global.}: int = 1
+    
     let endOffset = readNodeOffset(scene, s)
+    when not defined(release): echo "Reading node offset " & $endOffset
     if endOffset == 0:
-        return nil
+        return
     let propCount = readNodeOffset(scene, s)
     let propLength = readNodeOffset(scene, s)
 
     # Read node name
-    result = newNode()
-    result.name = readShortString(s)
+    let parsedNode = newNode()
+    parsedNode.name = readShortString(s)
+
+    when not defined(release): echo "Starting node: " & parsedNode.name & " at level " & $parserRecursiveLevel
 
     # Read properties
-    for propIdx in 0 .. propCount:
+    for propIdx in 0 ..< propCount.int:
         let property = readPropertyBinary(scene, s)
-        result.properties.add(property)
+        parsedNode.properties.add(property)
+
+    when not defined(release): echo "Parsing node: " & parsedNode.name & ", properties(" & $propCount & "), len(" & $propLength & "), endOffset(" & $s.getPosition() & " of " & $endOffset & ")"
+    # when not defined(release): echo "End parsing properties offset: " & $s.getPosition() & " of " & $endOffset
+
+    parent.children.add(parsedNode)
+
+    if s.getPosition() == endOffset.int:
+        when not defined(release): echo "Not nested node " & parsedNode.name
+        return
+
+    while s.getPosition() < endOffset.int - scene.nodeEndOffset():
+        when not defined(release): echo "Cycle reading node (" & $s.getPosition() & " of " & $endOffset & ")"
+        readNodeBinary(scene, s, parsedNode)
+
+    when not defined(release): echo "Before discarding endobject (" & $s.getPosition() & "/" & $endOffset & ")"
+
+    if scene.m_header.version >= 7500'u32:
+        discard s.readStr(scene.nodeEndOffset())
+    else:
+        discard s.readStr(scene.nodeEndOffset())
 
 proc parseFbxBinary(scene: Scene, s: Stream): tuple[result: LoadResult, scene: Scene] =
     # Parse binary FBX data, build up an FBX scene and return it
@@ -251,10 +286,13 @@ proc parseFbxBinary(scene: Scene, s: Stream): tuple[result: LoadResult, scene: S
 
     # Read all FBX nodes
     while not s.atEnd():
-        let child = readNodeBinary(scene, s)
-        if child.isNil():
-            return (LoadResult.Success, scene)
-        root.children.add(child)
+        readNodeBinary(scene, s, root)
+
+        # when not defined(release): echo "Parsed node: " & child.name
+
+        # if child.isNil():
+        #    return (LoadResult.Success, scene)
+        # root.children.add(child)
     
     # Set scene root
     scene.root = root
@@ -294,6 +332,8 @@ proc loadFbx*(path: string, format: FileFormat = FileFormat.Binary): tuple[resul
         fs = newFileStream(path, fmRead, 4096)
         scene = new(Scene)
     
+    when not defined(release): echo "Loading: " & path
+
     scene.m_source = path
     
     return if format == FileFormat.Binary: scene.parseFbxBinary(fs)
