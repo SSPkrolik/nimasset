@@ -1,4 +1,7 @@
 ## FBX Importer
+##
+## For extended debugging, pass -d:fbxdebug when compiling module.
+##
 import streams
 import strutils
 
@@ -117,12 +120,12 @@ proc propertyArrayTypeSize(pt: PropertyType): int =
 
 # <<< Property API <<< #
 
-proc newProperty(kind: PropertyType): Property =
+proc newProperty*(kind: PropertyType): Property =
     result.new()
     result.kind = kind
 
-proc `$`(property: Property): string =
-    return "Property of type " & $property.kind.char
+proc `$`*(property: Property): string =
+    return $property.kind.char
 
 # >>> Node API >>> #
 
@@ -164,8 +167,6 @@ proc readPropertyBinary(scene: Scene, s: Stream): Property =
     # Parse node property
     let pt: PropertyType = s.readUint8()
     
-    when not defined(release): echo "Property type: " & pt.char
-
     # Parse scalar node properties
     case pt.char
     of 'C': return s.readChar()
@@ -182,7 +183,7 @@ proc readPropertyBinary(scene: Scene, s: Stream): Property =
     if char(pt) == 'R': 
         let bufSize: int = s.readUint32().int
         let newProperty = newProperty(ptRawBinary)
-        when not defined(release): echo "Buffer size: " & $bufSize
+        when defined(fbxdebug): echo "Buffer size: " & $bufSize
         newProperty.valueBinary = newSeq[char](bufSize)
         assert s.readData(addr(newProperty.valueBinary[0]), bufSize) == bufSize
         return newProperty
@@ -193,97 +194,82 @@ proc readPropertyBinary(scene: Scene, s: Stream): Property =
         arrayEncoding: uint32 = s.readUint32()
         compressedLength: int = s.readUint32().int
 
+    var
+        uncompressed: string = ""
+        compressed: string = ""
+    
     if Encoding(arrayEncoding) == Encoding.Compressed:
-        # Parse compressed array node property
-        var compressed: seq[char] = @[]
         compressed.setLen(compressedLength)
         assert s.readData(addr compressed[0], compressedLength) == compressedLength
-        let uncompressed = zlib.uncompress(cast[cstring](addr compressed[0]), compressedLength)
-        let uncStream = newStringStream(uncompressed)
-
-        case pt.char
-        of 'd':
-            let newProperty = newProperty(ptArrayDouble)
-            newProperty.valueArrayFloat64 = @[]
-            while not uncStream.atEnd():
-                newProperty.valueArrayFloat64.add(uncStream.readFloat64())
-            return newProperty
-        of 'b':
-            let newProperty = newProperty(ptArrayBool)
-            newProperty.valueArrayBool = @[]
-            for c in uncompressed:
-                newProperty.valueArrayBool.add(if c.uint8 == 1: true else: false)
-            return newProperty
-        of 'i':
-            discard # TODO
-        of 'l':
-            discard # TODO
-        of 'f':
-            discard # TODO
-        else:
-            discard # TODO
+        uncompressed = zlib.uncompress(cast[cstring](addr compressed[0]), compressedLength, DETECT_STREAM)
     else:
-        # Parse uncompressed array node property
-        var uncompressed: string = ""
         uncompressed.setLen(arrayLength * propertyArrayTypeSize(pt))
         assert s.readData(addr uncompressed[0], arrayLength * propertyArrayTypeSize(pt)) == arrayLength * propertyArrayTypeSize(pt)
-        let uncStream = newStringStream(uncompressed)
 
-        case pt.char
-        of 'd':
-            let newProperty = newProperty(ptArrayDouble)
-            newProperty.valueArrayFloat64 = @[]
-            for _ in 0 ..< arrayLength:
-                newProperty.valueArrayFloat64.add(uncStream.readFloat64())
-            return newProperty            
-        of 'b':
-            let newProperty = newProperty(ptArrayBool)
-            newProperty.valueArrayBool = @[]
-            for c in uncompressed:
-                newProperty.valueArrayBool.add(if c.uint8 == 1: true else: false)
-            return newProperty
-        of 'i':
-            let newProperty = newProperty(ptArrayInteger)
-            newProperty.valueArrayInt32 = @[]
-            for _ in 0 ..< arrayLength:
-                newProperty.valueArrayInt32.add(uncStream.readInt32())
-            return newProperty
-        of 'l':
-            discard # TODO
-        of 'f':
-            discard # TODO
-        else:
-            discard # TODO
+    let uncStream = newStringStream(uncompressed)
+
+    case pt.char
+    of 'd':
+        let newProperty = newProperty(ptArrayDouble)
+        newProperty.valueArrayFloat64 = @[]
+        for _ in 0 ..< arrayLength:
+            newProperty.valueArrayFloat64.add(uncStream.readFloat64())
+        return newProperty            
+    of 'b':
+        let newProperty = newProperty(ptArrayBool)
+        newProperty.valueArrayBool = @[]
+        for c in uncompressed:
+            newProperty.valueArrayBool.add(if c.uint8 == 1: true else: false)
+        return newProperty
+    of 'i':
+        let newProperty = newProperty(ptArrayInteger)
+        newProperty.valueArrayInt32 = @[]
+        for _ in 0 ..< arrayLength:
+            newProperty.valueArrayInt32.add(uncStream.readInt32())
+        return newProperty
+    of 'l':
+        let newProperty = newProperty(ptArrayLong)
+        newProperty.valueArrayInt64 = @[]
+        for _ in 0 ..< arrayLength:
+            newProperty.valueArrayInt64.add(uncStream.readInt64())
+        return newProperty
+    of 'f':
+        let newProperty = newProperty(ptArrayFloat)
+        newProperty.valueArrayFloat = @[]
+        for _ in 0 ..< arrayLength:
+            newProperty.valueArrayFloat.add(uncStream.readFloat32())
+        return newProperty
+    else:
+        assert(false, "Wrong property data type read from FBX file: " & $pt)
 
     # Unknown node property type was encountered
     assert(false, "Wrong property data type read from FBX file: " & $pt)
 
 proc readNodeBinary(scene: Scene, s: Stream, parent: Node) =
     # Parse node encoded in binary FBX
-    when not defined(release):
-        var parserRecursiveLevel {.global.}: int = 1
-    
-    let endOffset = readNodeOffset(scene, s)
-    if endOffset == 0:
-        return
-    let propCount = readNodeOffset(scene, s)
-    let propLength = readNodeOffset(scene, s)
+    let
+        endOffset = readNodeOffset(scene, s)
+        propCount = readNodeOffset(scene, s)
+        propLength = readNodeOffset(scene, s)
 
     # Read node name
     let parsedNode = newNode()
     parsedNode.name = readShortString(s)
 
+    # Something wrong with the node or we have reached end of the document
+    if endOffset == 0:
+        discard s.readStr(scene.nodeEndOffset())
+        return
+
     # Read properties
     for propIdx in 0 ..< propCount.int:
         let property = readPropertyBinary(scene, s)
-        when not defined(release): echo "Property: " & $property
         parsedNode.properties.add(property)
-
-    when not defined(release): echo "Parsing node: " & parsedNode.name & ", properties(" & $propCount & "), len(" & $propLength & "), endOffset(" & $s.getPosition() & " of " & $endOffset & ")"
-    # when not defined(release): echo "End parsing properties offset: " & $s.getPosition() & " of " & $endOffset
 
     # Add node to tree
     parent.children.add(parsedNode)
+
+    when defined(fbxdebug): echo "Parsing node finished: " & parsedNode.name & ", properties(" & $propCount & "), len(" & $propLength & "), endOffset(" & $s.getPosition() & " of " & $endOffset & ")"
 
     # Return if node does not include nested ones
     if s.getPosition() == endOffset.int:
@@ -294,10 +280,7 @@ proc readNodeBinary(scene: Scene, s: Stream, parent: Node) =
         readNodeBinary(scene, s, parsedNode)
 
     # Read end marker of nested nodes
-    if scene.m_header.version >= 7500'u32:
-        discard s.readStr(scene.nodeEndOffset())
-    else:
-        discard s.readStr(scene.nodeEndOffset())
+    discard s.readStr(scene.nodeEndOffset())
 
 proc parseFbxBinary(scene: Scene, s: Stream): tuple[result: LoadResult, scene: Scene] =
     # Parse binary FBX data, build up an FBX scene and return it
@@ -314,12 +297,6 @@ proc parseFbxBinary(scene: Scene, s: Stream): tuple[result: LoadResult, scene: S
     # Read all FBX nodes
     while not s.atEnd():
         readNodeBinary(scene, s, root)
-
-        # when not defined(release): echo "Parsed node: " & child.name
-
-        # if child.isNil():
-        #    return (LoadResult.Success, scene)
-        # root.children.add(child)
     
     # Set scene root
     scene.root = root
@@ -359,7 +336,7 @@ proc loadFbx*(path: string, format: FileFormat = FileFormat.Binary): tuple[resul
         fs = newFileStream(path, fmRead, 4096)
         scene = new(Scene)
     
-    when not defined(release): echo "Loading: " & path
+    when defined(fbxdebug): echo "Loading FBX at: " & path
 
     scene.m_source = path
     
