@@ -104,11 +104,25 @@ converter scalarToProperty[T: char | int16 | int32 | int64 | float32 | float64 |
         result.kind = ptString
         result.valueString = value
 
+proc propertyArrayTypeSize(pt: PropertyType): int =
+    # Returns size of single element for array property size
+    assert pt in [ptArrayBool, ptArrayDouble, ptArrayInteger, ptArrayFloat, ptArrayLong]
+    return case pt
+    of ptArrayBool: 1
+    of ptArrayDouble: 8
+    of ptArrayInteger: 4
+    of ptArrayFloat: 4
+    of ptArrayLong: 8
+    else: 0
+
 # <<< Property API <<< #
 
 proc newProperty(kind: PropertyType): Property =
     result.new()
     result.kind = kind
+
+proc `$`(property: Property): string =
+    return "Property of type " & $property.kind.char
 
 # >>> Node API >>> #
 
@@ -175,7 +189,7 @@ proc readPropertyBinary(scene: Scene, s: Stream): Property =
 
     # Parse array node property
     let
-        uncompressedLength: int = s.readUint32().int
+        arrayLength: int = s.readUint32().int
         arrayEncoding: uint32 = s.readUint32()
         compressedLength: int = s.readUint32().int
 
@@ -185,10 +199,15 @@ proc readPropertyBinary(scene: Scene, s: Stream): Property =
         compressed.setLen(compressedLength)
         assert s.readData(addr compressed[0], compressedLength) == compressedLength
         let uncompressed = zlib.uncompress(cast[cstring](addr compressed[0]), compressedLength)
+        let uncStream = newStringStream(uncompressed)
 
         case pt.char
         of 'd':
-            discard # TODO
+            let newProperty = newProperty(ptArrayDouble)
+            newProperty.valueArrayFloat64 = @[]
+            while not uncStream.atEnd():
+                newProperty.valueArrayFloat64.add(uncStream.readFloat64())
+            return newProperty
         of 'b':
             let newProperty = newProperty(ptArrayBool)
             newProperty.valueArrayBool = @[]
@@ -205,13 +224,18 @@ proc readPropertyBinary(scene: Scene, s: Stream): Property =
             discard # TODO
     else:
         # Parse uncompressed array node property
-        var uncompressed: seq[char] = @[]
-        uncompressed.setLen(uncompressedLength)
-        assert s.readData(addr uncompressed[0], uncompressedLength) == uncompressedLength
+        var uncompressed: string = ""
+        uncompressed.setLen(arrayLength * propertyArrayTypeSize(pt))
+        assert s.readData(addr uncompressed[0], arrayLength * propertyArrayTypeSize(pt)) == arrayLength * propertyArrayTypeSize(pt)
+        let uncStream = newStringStream(uncompressed)
 
         case pt.char
         of 'd':
-            discard # TODO
+            let newProperty = newProperty(ptArrayDouble)
+            newProperty.valueArrayFloat64 = @[]
+            for _ in 0 ..< arrayLength:
+                newProperty.valueArrayFloat64.add(uncStream.readFloat64())
+            return newProperty            
         of 'b':
             let newProperty = newProperty(ptArrayBool)
             newProperty.valueArrayBool = @[]
@@ -219,7 +243,11 @@ proc readPropertyBinary(scene: Scene, s: Stream): Property =
                 newProperty.valueArrayBool.add(if c.uint8 == 1: true else: false)
             return newProperty
         of 'i':
-            discard # TODO
+            let newProperty = newProperty(ptArrayInteger)
+            newProperty.valueArrayInt32 = @[]
+            for _ in 0 ..< arrayLength:
+                newProperty.valueArrayInt32.add(uncStream.readInt32())
+            return newProperty
         of 'l':
             discard # TODO
         of 'f':
@@ -248,6 +276,7 @@ proc readNodeBinary(scene: Scene, s: Stream, parent: Node) =
     # Read properties
     for propIdx in 0 ..< propCount.int:
         let property = readPropertyBinary(scene, s)
+        when not defined(release): echo "Property: " & $property
         parsedNode.properties.add(property)
 
     when not defined(release): echo "Parsing node: " & parsedNode.name & ", properties(" & $propCount & "), len(" & $propLength & "), endOffset(" & $s.getPosition() & " of " & $endOffset & ")"
