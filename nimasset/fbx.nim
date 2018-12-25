@@ -168,8 +168,9 @@ proc readPropertyBinary(scene: Scene, s: Stream): Property =
     if char(pt) == 'R': 
         let bufSize: int = s.readUint32().int
         let newProperty = newProperty(ptRawBinary)
+        when not defined(release): echo "Buffer size: " & $bufSize
         newProperty.valueBinary = newSeq[char](bufSize)
-        assert s.readData(addr(result.valueBinary[0]), bufSize) == bufSize
+        assert s.readData(addr(newProperty.valueBinary[0]), bufSize) == bufSize
         return newProperty
 
     # Parse array node property
@@ -235,7 +236,6 @@ proc readNodeBinary(scene: Scene, s: Stream, parent: Node) =
         var parserRecursiveLevel {.global.}: int = 1
     
     let endOffset = readNodeOffset(scene, s)
-    when not defined(release): echo "Reading node offset " & $endOffset
     if endOffset == 0:
         return
     let propCount = readNodeOffset(scene, s)
@@ -245,8 +245,6 @@ proc readNodeBinary(scene: Scene, s: Stream, parent: Node) =
     let parsedNode = newNode()
     parsedNode.name = readShortString(s)
 
-    when not defined(release): echo "Starting node: " & parsedNode.name & " at level " & $parserRecursiveLevel
-
     # Read properties
     for propIdx in 0 ..< propCount.int:
         let property = readPropertyBinary(scene, s)
@@ -255,18 +253,18 @@ proc readNodeBinary(scene: Scene, s: Stream, parent: Node) =
     when not defined(release): echo "Parsing node: " & parsedNode.name & ", properties(" & $propCount & "), len(" & $propLength & "), endOffset(" & $s.getPosition() & " of " & $endOffset & ")"
     # when not defined(release): echo "End parsing properties offset: " & $s.getPosition() & " of " & $endOffset
 
+    # Add node to tree
     parent.children.add(parsedNode)
 
+    # Return if node does not include nested ones
     if s.getPosition() == endOffset.int:
-        when not defined(release): echo "Not nested node " & parsedNode.name
         return
 
+    # Read nested nodes
     while s.getPosition() < endOffset.int - scene.nodeEndOffset():
-        when not defined(release): echo "Cycle reading node (" & $s.getPosition() & " of " & $endOffset & ")"
         readNodeBinary(scene, s, parsedNode)
 
-    when not defined(release): echo "Before discarding endobject (" & $s.getPosition() & "/" & $endOffset & ")"
-
+    # Read end marker of nested nodes
     if scene.m_header.version >= 7500'u32:
         discard s.readStr(scene.nodeEndOffset())
     else:
