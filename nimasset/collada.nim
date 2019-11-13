@@ -669,7 +669,7 @@ proc parseInput(x: var XmlParser): ColladaInput =
         of xmlAttribute:
             case x.attrKey
             of "semantic":
-                result.semantic = x.attrValue[0..^1]
+                result.semantic = x.attrValue
             of "source":
                 result.source = x.attrValue[1..^1]
             else:
@@ -717,11 +717,11 @@ proc parseSampler(x: var XmlParser): ColladaSampler =
 
 proc parseSource(x: var XmlParser): ColladaSource =
     ## Parse <source> tag
-    result.new
 
     var
         localContext = csSource
         counter = 0
+        resultId = ""
 
     while true:
         x.next()
@@ -729,21 +729,20 @@ proc parseSource(x: var XmlParser): ColladaSource =
         of xmlAttribute:
             if x.attrKey == "id":
                 if localContext == csSource:
-                    result.id = x.attrValue[0..^1]
+                    resultId = x.attrValue
                 elif localContext == csFloatArray:
-                    result.kind = SourceKind.Float
-                    result.dataFloat = @[]
+                    result = ColladaSource(kind: SourceKind.Float)
                 elif localContext == csNameArray:
-                    result.kind = SourceKind.Name
-                    result.dataName = @[]
+                    result = ColladaSource(kind: SourceKind.Name)
             elif x.attrKey == "count":
                 counter = x.attrValue.parseInt()
             elif x.attrKey == "type":
                 if localContext == csParam:
-                    result.paramType = x.attrValue[0..^1]
+                    result.paramType = x.attrValue
         of xmlCharData:
             for piece in x.charData.split({' ', '\L', '\r'}):
                 if piece.len > 0:
+                    assert(not result.isNil) # TODO: More elaborate handling might be required
                     if result.kind == SourceKind.Float:
                         result.dataFloat.add(piece.parseFloat())
                     else:
@@ -761,6 +760,9 @@ proc parseSource(x: var XmlParser): ColladaSource =
         else:
             discard
 
+    assert(not result.isNil) # TODO: More elaborate handling might be required
+    result.id = resultId
+
 proc parseAnimation(x: var XmlParser): ColladaAnimation =
     ## Parse <animation> tag
     result = newColladaAnimation()
@@ -771,7 +773,7 @@ proc parseAnimation(x: var XmlParser): ColladaAnimation =
         of xmlAttribute:
             case x.attrKey
             of "id":
-                result.id = x.attrValue[0..^1]
+                result.id = x.attrValue
             else:
                 discard
         of xmlElementStart:
